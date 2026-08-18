@@ -9,121 +9,178 @@ as in RFC 2119.
 
 ## 1. What a certificate asserts
 
-> *On platform `P`, the test targets `T` for project `prj` produced result `R`,
-> with the repository at commit `C` and its environment in the state described
-> by binding `E`.*
+> *On platform `P`, framework `F` executed commands `C` covering targets `T`,
+> which produced result `R`, in repository `repo` whose working tree was in VCS
+> state `V`.*
 
-A certificate is a claim about a **specific, identified state**. Everything in
-the record exists either to identify that state precisely enough to check the
-claim against it, or to say who made the claim.
+A certificate is a claim about a **specific, identified state**, made by a
+**named framework**, about **commands it actually ran**.
 
-## 2. The record
+The standard deliberately stops there. It does not describe dependency
+closures, toolchain versions, container images or environment variables —
+because it cannot describe them for every ecosystem, and a field it cannot
+define precisely is worse than no field at all.
+
+## 2. Why VCS state is the whole binding
+
+The one thing every framework shares is that its inputs are **files in a
+repository at a commit**. A test framework's configuration, its target
+definitions, and — critically — **its lock file** are all under version control.
+
+So the commit *already binds* them. A certificate that names a commit and
+attests the tree was clean has, transitively, bound every committed input the
+framework depends on, without the standard needing to know what those inputs
+are or how to digest them.
+
+This is why there is no environment digest, no lock hash, and no
+method-tagged binding in this format. A framework that wants to check something
+deeper resolves **its own lock file at that commit** and checks it however it
+likes ([Verification §4](./Verification.md#4-framework-specific-validity)). The
+standard's job is to say *which commit, and was it clean*; the framework's job
+is to say *and here is what that means for me*.
+
+The corollary matters just as much: **anything not under version control is not
+bound by a certificate.** Uncommitted state, ambient tool versions, network
+resources and sibling checkouts outside the repository are outside the claim. A
+framework that depends on them must enforce that at issuance time — refusing to
+issue when they are unclean — because no verifier can reconstruct them later.
+
+## 3. The record
 
 ```toml
 schema = "test-certificate.v1"
 
 [certificate]
-project     = "codetracer"
-repo        = "codetracer"
-commit      = "a858633c…"                  # exact commit the tests ran against
-platform    = "linux/aarch64"              # OS/arch the tests executed on
-targets     = ["t-unit", "t-integration"]  # the test targets this covers
-result      = "passed"
-issued_at   = "2026-06-23T10:14:33Z"       # RFC 3339, UTC
-issuer      = "repro-daemon@build-host-7"  # who observed and issued
-key_id      = "repro-sign-2026-q2"         # which key signed, when signed
+framework  = "reprobuild"                  # who issued, and whose rules apply
+project    = "codetracer"
+platform   = "linux/aarch64"               # OS/arch the tests executed on
+targets    = ["t-integration", "t-unit"]   # test targets this covers (sorted)
+result     = "passed"
+issued_at  = "2026-06-23T10:14:33Z"        # RFC 3339, UTC
+issuer     = "repro-daemon@build-host-7"   # informational, not a trust input
+key_id     = "repro-sign-2026-q2"          # which key signed, when signed
 
-[certificate.environment]
-method = "reprobuild-lock"                 # how the binding was computed
-value  = "blake3:9f2c…"                    # the binding itself
+[certificate.vcs]
+repo       = "codetracer"
+commit     = "a858633c…"                   # exact commit the tests ran against
+clean      = true                          # no modifications to tracked files
+untracked  = false                         # no untracked files present
 
-[certificate.signature]                    # OPTIONAL — see §5
+[[certificate.command]]
+argv = ["repro", "test", "--targets", "t-unit,t-integration"]
+
+[certificate.signature]                    # OPTIONAL — see §6
 algorithm = "ed25519"
 value     = "base64(detached signature over the canonical payload)"
 ```
 
-### 2.1 Fields
+### 3.1 Fields
 
 | Field | Required | Meaning |
 | ----- | -------- | ------- |
 | `schema` | yes | Format identifier. `test-certificate.v1` for this revision. |
+| `framework` | yes | Identifies the issuing framework and therefore whose validity rules apply (§4). |
 | `project` | yes | Logical project the targets belong to. |
-| `repo` | yes | Repository the commit belongs to. |
-| `commit` | yes | Full commit identifier the tests ran against. |
 | `platform` | yes | Platform the tests executed on, as `os/arch`. |
-| `targets` | yes | Test targets covered. Order is not significant; canonicalization sorts them. |
-| `result` | yes | `passed` is the only value that can support a positive claim. |
+| `targets` | yes | Test targets covered. Sorted and deduplicated in canonical form. |
+| `result` | yes | `passed` is the only value supporting a positive claim. |
 | `issued_at` | yes | RFC 3339 timestamp, UTC. |
-| `issuer` | yes | Free-form identification of the issuing component. Informational; it is **not** a trust input. |
-| `key_id` | when signed | Identifies the signing key, resolved against a key store (§5). |
-| `environment` | yes | The environment binding (§3). |
-| `signature` | no | Detached signature over the canonical payload (§5). |
+| `issuer` | yes | Free-form identification of the issuing component. Informational. |
+| `key_id` | when signed | Identifies the signing key, resolved against a key store. |
+| `vcs` | yes | The repository state the tests ran against (§3.2). |
+| `command` | yes, ≥1 | The commands actually executed (§3.3). |
+| `signature` | no | Detached signature over the canonical payload (§6). |
 
 A conforming producer MUST emit every required field. A conforming verifier MUST
 reject a record missing any required field, and MUST reject an unrecognised
 `schema`.
 
-### 2.2 Binding fields
+### 3.2 `[certificate.vcs]`
 
-`commit`, `environment`, `platform` and `targets` are the **binding fields**.
-They are what make a certificate checkable rather than merely assertive: a
-verifier confirms the certificate describes the state actually in front of it.
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `repo` | yes | Repository the commit belongs to. |
+| `commit` | yes | Full commit identifier. |
+| `clean` | yes | `true` when no tracked file differed from `commit` at execution time. |
+| `untracked` | yes | `true` when untracked files were present. |
 
-A verifier MUST compare all four. A certificate that matches on `commit` alone
-says nothing about whether the same dependencies, or the same platform, or the
-same tests were involved.
+`clean` and `untracked` are separate because they mean different things. A
+modified tracked file means *the tests did not run against `commit`* — the claim
+is unsound. Untracked files usually mean scratch work that did not affect the
+run, but can mean a file the build picked up. Producers MUST report both
+honestly; consumers decide what to do with each.
 
-## 3. The environment binding
+A producer MUST NOT issue `clean = true` when it did not check. If it cannot
+determine cleanliness, it MUST NOT issue a certificate at all — a guess here
+invalidates everything downstream.
 
-A test result is only meaningful together with what the tests ran *against*.
-Different ecosystems identify that differently — a lock file, a dependency
-closure, a container digest, a Nix derivation, or nothing at all — so the
-standard treats the binding as **opaque, with a declared method**.
+### 3.3 `[[certificate.command]]`
+
+One entry per command executed, in execution order.
 
 ```toml
-[certificate.environment]
-method = "reprobuild-lock"
-value  = "blake3:9f2c…"
+[[certificate.command]]
+argv = ["ct", "test", "--selector", "tests/test_calc.py::test_add"]
 ```
 
-- `method` names how `value` was computed and therefore how it must be compared.
-- `value` is an opaque string, meaningful only under its `method`.
+`argv` is the argument vector as executed, unshelled. Producers MUST record what
+was actually run, not a normalised or idealised form.
 
-Rules:
+Commands make the claim **concrete**: a certificate says not merely "tests
+passed" but "*these commands* ran and passed". A reader can see what was
+attested without trusting a summary of it.
 
-- A verifier MUST NOT compare bindings across different `method` values. Two
-  bindings with different methods are **incomparable**, not unequal — a verifier
-  that cannot evaluate a certificate's method MUST treat it as unverifiable
-  rather than invalid, and say so.
-- A method whose comparison is not plain string equality MUST define its
-  comparison rule in its own specification.
-- `method = "none"` declares that the issuer bound no environment state. Such a
-  certificate is still well-formed, and still says something real about a commit
-  on a platform. Consumers that require an environment binding MUST reject it;
-  consumers that do not, MAY accept it. It MUST NOT be silently treated as
-  equivalent to a bound certificate.
+Producers SHOULD redact values that would leak secrets, replacing the value with
+`"[redacted]"` rather than removing the argument, so the shape of the command
+survives.
 
-The registry of methods is deliberately open. Known values at v1:
+## 4. Frameworks recognise their own certificates
 
-| `method` | Comparison | Defined by |
-| -------- | ---------- | ---------- |
-| `none` | Always incomparable to a bound certificate | This document |
-| `lockfile-digest` | String equality over `<algo>:<hex>` of the lock file bytes | This document |
-| `reprobuild-lock` | String equality over the resolved workspace lock digest | reprobuild |
+A repository may be tested by several frameworks — a Nim suite under one runner,
+a Python suite under another, an integration suite under a build system. Their
+certificates coexist, and none of them can evaluate the others.
 
-## 4. Partial coverage is normal
+Therefore:
 
-A certificate covers exactly the targets that ran, on the platform that ran them.
-Producers MUST NOT claim targets that did not run, or a platform they did not
-run on.
+- A consumer MUST filter by `framework` before applying any framework-specific
+  rule. Applying one framework's validity logic to another's certificate is
+  always wrong, even when the record parses.
+- A consumer MUST ignore certificates whose `framework` it does not recognise,
+  rather than rejecting them. An unrecognised framework's certificate is not
+  evidence *for* this consumer, and is not evidence *against* anything either.
+- Two frameworks MUST NOT claim the same `framework` identifier. Identifiers are
+  matched by exact string equality.
 
-It follows that full coverage is frequently expressed as **several
-certificates** — one per platform, or one per partial run — and that consumers
-evaluate the **union** (§ [Verification](./Verification.md)). This is the normal
-case, not a degraded one: a developer with a Linux box and a macOS box produces
-two certificates, and neither is deficient.
+The generic parts of verification — signature, key trust, VCS match, coverage
+union — are framework-independent and defined in
+[Verification](./Verification.md). Everything past that is the framework's own.
 
-## 5. Signatures
+## 5. Enforcement is project-specific
+
+A consequence worth stating plainly, because it is the most common way an
+adopter gets the architecture wrong:
+
+> **There is no generic pre-receive hook, and this standard does not define
+> one.**
+
+A push gate has to decide *"is this commit adequately tested?"*, and that
+question is only answerable per project:
+
+- which frameworks must have certified, and which are advisory
+- which targets each framework must cover
+- which platforms each must cover
+- what each framework's own lock file must say at that commit
+
+A project using two frameworks needs both verifiers, composed according to its
+own policy. A generic hook could only check the parts in §6 and §3 — signature
+and VCS match — which is necessary but nowhere near sufficient, and a hook that
+passed on that basis would be actively misleading.
+
+What the standard makes possible is that each framework ships a verifier for its
+own certificates, and a project composes them. What it does not do is pretend
+the composition is universal.
+
+## 6. Signatures
 
 A signature is **OPTIONAL in the format and MAY be required by a consumer**.
 This is the standard's whole position on trust: it defines how to sign and how
@@ -131,16 +188,14 @@ to check a signature, and leaves to each project the decision of whether an
 unsigned certificate is worth anything.
 
 - An unsigned certificate is well-formed. It carries no protection against
-  forgery and MUST NOT be treated as if it did. It is useful where the producer
-  and consumer are the same party, or where the certificate is informational.
+  forgery and MUST NOT be treated as if it did.
 - A signed certificate carries a detached signature over the canonical payload
-  (§ [Canonical-Payload](./Canonical-Payload.md)), excluding the signature block
-  itself.
-- Consumers that require signatures MUST reject unsigned certificates outright,
-  rather than accepting them at reduced confidence. "Signed or not" is a
-  decidable question and MUST be decided.
+  ([Canonical-Payload](./Canonical-Payload.md)), excluding the signature block.
+- Consumers that require signatures MUST reject unsigned certificates outright
+  rather than accepting them at reduced confidence. "Signed or not" is decidable
+  and MUST be decided.
 
-### 5.1 The signing primitive
+### 6.1 The signing primitive
 
 Conforming implementations MUST use **OpenSSH ed25519 detached signatures**
 (`ssh-keygen -Y sign` / `ssh-keygen -Y verify`) under a **namespace** that
@@ -151,48 +206,58 @@ material. The namespace for this schema version is:
 test-certificate-v1
 ```
 
-Domain separation is not optional. Without it, a signature obtained for one
+Domain separation is not optional. Without it, a signature obtained for another
 purpose can be replayed as a certificate signature over identical bytes.
 
-`algorithm` MUST be `ed25519`; `value` MUST be the base64 of the detached
-signature blob.
+`algorithm` MUST be `ed25519`; `value` MUST be base64 of the detached signature
+blob.
 
-### 5.2 Issuance integrity
+### 6.2 Issuance integrity
 
-This is the one rule about *issuance* the standard does state, because it is
-what a signature is worth rather than a matter of local policy:
+The one rule about *issuance* the standard states, because it determines what a
+signature is worth rather than being local policy:
 
 > A conforming producer MUST make a signature obtainable **only** as a
-> consequence of having actually executed the tests being attested. It MUST NOT
+> consequence of having actually executed the attested commands. It MUST NOT
 > expose any interface that signs a caller-supplied record.
 
 A "sign this blob" entry point makes every certificate from that producer
-worthless, because it lets any caller mint a claim about a test run that never
-happened. A producer that offers one is not conforming, whatever else it does
+worthless, because it lets any caller mint a claim about a run that never
+happened. A producer offering one is not conforming, whatever else it does
 correctly.
 
-The *strength* of that guarantee is a deployment property (see the README):
-it depends on whether the tested code can reach the signing key. The rule above
-is what makes the guarantee meaningful at all, at any strength.
+How *much* that guarantee is worth is a deployment property (see the README): it
+depends on whether the tested code can reach the signing key. The rule above is
+what makes it meaningful at all, at any strength.
 
-## 6. Conformance
+## 7. Conformance
 
 A **conforming producer**:
 
-- emits records satisfying §2 with a valid environment binding per §3
-- claims only targets and platforms it actually ran (§4)
-- if it signs, uses the primitive and namespace in §5.1 over the canonical
-  payload, and satisfies the issuance-integrity rule in §5.2
+- emits records satisfying §3, with honest `vcs` state (§3.2) and the commands
+  it actually ran (§3.3)
+- claims only targets and platforms it actually ran (§8)
+- uses a `framework` identifier that is its own (§4)
+- if it signs, uses the primitive and namespace in §6.1 over the canonical
+  payload, and satisfies §6.2
 
 A **conforming verifier**:
 
 - rejects records with unknown `schema` or missing required fields
-- compares all four binding fields (§2.2)
-- treats unevaluable environment methods as unverifiable, not invalid (§3)
-- evaluates coverage as a union across certificates
-  (§ [Verification](./Verification.md))
-- when signatures are required, verifies them per §5.1 and rejects unsigned
+- filters by `framework` and ignores unrecognised ones rather than failing (§4)
+- checks the VCS binding (§3.2) and evaluates coverage as a union
+  ([Verification](./Verification.md))
+- when signatures are required, verifies them per §6.1 and rejects unsigned
   records rather than downgrading them
+- does not present itself as a general answer to "is this commit tested?" (§5)
 
-Neither role requires implementing transport (§ [Transport](./Transport.md));
-carriers are interchangeable and the signed payload is the unit of trust.
+## 8. Partial coverage is normal
+
+A certificate covers exactly the targets that ran, on the platform that ran them.
+Producers MUST NOT claim targets that did not run, or a platform they did not run
+on.
+
+Full coverage is therefore frequently expressed as **several certificates** —
+per platform, per framework, or per partial run — evaluated as a union
+([Verification §5](./Verification.md#5-coverage-is-a-union)). This is the normal
+case, not a degraded one.

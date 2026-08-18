@@ -1,8 +1,9 @@
 # Test Certificates
 
 A vendor-neutral standard for **test certificates**: small, checkable records
-asserting that a project's required tests passed against a specific commit, on
-a specific platform, with a specific environment state.
+asserting that a named framework ran specific commands, covering specific test
+targets, against a specific commit in a clean repository, on a specific
+platform, and that they passed.
 
 A certificate answers one question — *"were the required tests green for exactly
 this state?"* — in a form another party can verify without rerunning them.
@@ -39,13 +40,15 @@ project.
 - Canonical serialization (byte-exact, so independent implementations agree)
 - Signing and signature verification
 - Registered-key stores, rotation and revocation
-- Validity and coverage evaluation
+- The generic validity check: VCS binding, platform, and coverage as a union
 - Transport alongside a commit
 
-**Out of scope** — every adopting project decides these for itself:
+**Out of scope** — decided by each framework, or by each project:
 
 - *Who* may issue a certificate, and under what preconditions
-- Whether issuance requires a clean working tree, a lock, a sandbox, or nothing
+- What a framework additionally requires of its own lock file or config
+- **How several frameworks compose into a push gate.** There is no generic
+  pre-receive hook and this standard does not define one (see below)
 - Whether a signature is required, and whose keys are trusted
 - What consumers do with a valid certificate — gate a push, skip CI work,
   display a status, or merely record it
@@ -55,6 +58,37 @@ The split is deliberate. The parts above the line have to be identical
 everywhere or certificates do not interoperate. The parts below the line are
 exactly where projects legitimately differ, and forcing agreement there would
 prevent adoption rather than enable it.
+
+## The commit is the binding
+
+Every framework's inputs are files in a repository at a commit — its
+configuration, its target definitions, and its lock file are all under version
+control. A certificate naming a commit and attesting the tree was clean has
+therefore, transitively, bound every committed input, without the standard
+needing to know what those inputs are.
+
+That is why there is no environment digest or lock hash in the format. A
+framework wanting a deeper check resolves **its own lock file at that commit**
+and applies whatever rules it likes. The standard says *which commit, and was it
+clean*; the framework says *what that means for me*.
+
+The corollary matters as much: anything **not** under version control is not
+bound by a certificate. A framework depending on such state must refuse to issue
+while it is unclean, because no verifier can reconstruct it afterwards.
+
+## Frameworks own their verdicts; projects own the gate
+
+A repository may be tested by several frameworks, and their certificates
+coexist. Each names its `framework`; consumers filter on that first, and ignore
+what they do not implement rather than rejecting it.
+
+It follows that **a push gate is project-specific**. Deciding "is this commit
+adequately tested?" means deciding which frameworks must have certified, which
+targets and platforms each must cover, and what each framework's own lock file
+must say — none of it universal. Each framework ships a verifier for its own
+certificates; a project composes them under its own policy. A generic hook could
+check only the signature and the VCS match, which is necessary but nowhere near
+sufficient, and passing on that basis would be actively misleading.
 
 ## Assurance is a deployment property, not a format field
 

@@ -16,7 +16,8 @@ Everything below is normative.
 
 ## 2. Structure
 
-The payload is the `schema` line and the `[certificate]` table, in the exact
+The payload is the `schema` line, the `[certificate]` table, the
+`[certificate.vcs]` table and the `[[certificate.command]]` entries, in the exact
 order below, and **nothing else**. The signature block is excluded — it cannot
 cover itself.
 
@@ -24,9 +25,8 @@ cover itself.
 schema = "test-certificate.v1"
 
 [certificate]
+framework = "<framework>"
 project = "<project>"
-repo = "<repo>"
-commit = "<commit>"
 platform = "<platform>"
 targets = ["<t1>", "<t2>"]
 result = "<result>"
@@ -34,9 +34,14 @@ issued_at = "<rfc3339>"
 issuer = "<issuer>"
 key_id = "<key-id>"
 
-[certificate.environment]
-method = "<method>"
-value = "<value>"
+[certificate.vcs]
+repo = "<repo>"
+commit = "<commit>"
+clean = true
+untracked = false
+
+[[certificate.command]]
+argv = ["<arg0>", "<arg1>"]
 ```
 
 Rules:
@@ -46,9 +51,16 @@ Rules:
 2. **One space either side of `=`.**
 3. `key_id` is **omitted entirely** when the certificate is unsigned — not
    emitted empty. An omitted key and an empty key are different payloads.
-4. The `[certificate.environment]` table is separated from the body by exactly
-   one blank line, and is always present (`method = "none"` when unbound).
-5. Exactly one blank line follows the `schema` line. No other blank lines.
+4. `clean` and `untracked` are TOML booleans, emitted as bare `true` / `false`,
+   never as quoted strings.
+5. Tables are separated by exactly one blank line. Exactly one blank line follows
+   the `schema` line. No other blank lines.
+6. `[[certificate.command]]` entries appear **in execution order**, which is part
+   of the claim and MUST NOT be sorted. Each entry is preceded by one blank line.
+   At least one entry is required.
+7. `argv` arrays are serialized like `targets` (§3) but **are never sorted or
+   deduplicated** — an argument vector is ordered by nature, and repeated
+   arguments are meaningful.
 
 ## 3. `targets` is sorted
 
@@ -111,18 +123,29 @@ canonical payload, since the signature block is excluded from it in both cases.
 ## 7. Known divergences from reprobuild's current implementation
 
 reprobuild is the first conforming producer, and its shipped implementation
-predates this standard. Two differences are **breaking** and require migration;
-they are recorded here so nobody assumes byte-compatibility that does not exist.
+predates this standard. The differences below are **breaking** and require
+migration; they are recorded here so nobody assumes byte-compatibility that does
+not exist.
 
 | | reprobuild today | This standard |
 | --- | --- | --- |
 | Schema id | `reprobuild.test-certificate.v1` | `test-certificate.v1` |
-| Environment | flat `lock = "blake3:…"` in `[certificate]` | `[certificate.environment]` with `method` + `value` |
+| Framework id | absent | `framework` field, required |
+| Repo state | `repo` + `commit` flat, plus `lock = "blake3:…"` | `[certificate.vcs]` with `repo`, `commit`, `clean`, `untracked`; no lock digest |
+| Commands | not recorded | `[[certificate.command]]`, at least one, required |
 | `targets` order | as observed/run | sorted, deduplicated |
 | Signature namespace | `reprobuild-test-certificate-v1` | `test-certificate-v1` |
 
-The `targets` change is the subtle one: it is not merely a rename, it changes
-the signed bytes for any certificate whose targets did not happen to run in
-sorted order. Certificates issued before migration cannot be verified under this
-standard, and MUST be re-issued rather than translated — translating them would
-mean re-signing a payload the original signer never saw.
+Two of these deserve comment.
+
+**The lock digest is gone, not moved.** reprobuild's `repro.lock` is committed
+per repo, so `vcs.commit` already binds it: a verifier that wants to check the
+lock resolves it at that commit itself. The digest field was carrying
+information the commit already implied, at the cost of making the format
+ecosystem-specific.
+
+**`targets` sorting changes the signed bytes** for any certificate whose targets
+did not happen to run in sorted order. Certificates issued before migration
+cannot be verified under this standard and MUST be **re-issued**, never
+translated — translating would mean re-signing a payload the original signer
+never saw.
