@@ -162,14 +162,28 @@ an unstated assumption.
 
 #### 3.2.2 Testing a modified working tree
 
-Requiring a clean tree makes certification an ordering constraint: commit
-first, then test, then push. That is backwards from how people work, and it is
-the main reason a certificate requirement feels like a tax. Worse, it is the
-*uncommitted* state a developer most wants attested — the change they are about
-to push.
+**A clean-tree certificate is the normal output, and producers SHOULD aim for
+one.** The intended workflow is: run the tests, commit once they pass, then run
+them again to certify.
 
-A certificate MAY therefore express the tested state as **`commit` plus the
-modification applied on top of it**:
+That second run is not the tax it appears to be. Committing changes no file
+content, so a framework with content-based incremental testing finds every one
+of its per-test hashes unchanged and re-runs **nothing** — the second invocation
+is a hash comparison, not a test run. Frameworks with that property (reprobuild
+via `repro test`, CodeTracer via `ct test`) turn "commit, then certify" into a
+near-free step rather than a second full suite.
+
+Producers SHOULD therefore prefer the clean-tree form, and tooling SHOULD guide
+users toward it, because it is the form every consumer can evaluate with a plain
+commit comparison and no reconstruction.
+
+The modified-worktree form below exists for the cases that remain: attesting
+work that genuinely cannot be committed yet, a framework without incremental
+testing where re-running is expensive, or an environment where the commit
+happens elsewhere. It is a supported form, not the recommended default.
+
+A certificate MAY express the tested state as **`commit` plus the modification
+applied on top of it**:
 
 ```toml
 [certificate.vcs]
@@ -198,10 +212,11 @@ object id does — it identifies the tested content exactly, is cheap to compute
 comparison: the commit being evaluated has this tree, so its content *is* what
 was tested, whatever its message, author or parents.
 
-That last point is the practical payoff. A developer tests a dirty tree, commits
-it, and pushes: the resulting commit is not the one the certificate names, but
-its tree is identical, so the certificate still covers it. Certification stops
-constraining the order of work.
+That last point is what makes the form usable at all. A developer tests a dirty
+tree, commits it, and pushes: the resulting commit is not the one the
+certificate names, but its tree is identical, so the certificate still covers
+it — no re-run required, even for a framework that would otherwise have to
+repeat the suite.
 
 **`patch_digest` is the portable fallback**, for VCSs without a canonical
 content id and for cases where a reviewer wants to see the change. It is
