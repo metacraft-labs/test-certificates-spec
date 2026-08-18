@@ -100,19 +100,139 @@ reject a record missing any required field, and MUST reject an unrecognised
 | Field | Required | Meaning |
 | ----- | -------- | ------- |
 | `repo` | yes | Repository the commit belongs to. |
-| `commit` | yes | Full commit identifier. |
+| `commit` | yes | Commit the tested state is expressed relative to. |
 | `clean` | yes | `true` when no tracked file differed from `commit` at execution time. |
 | `untracked` | yes | `true` when untracked files were present. |
+| `paths` | no | Repo-relative paths the claim is **scoped to**. Absent or empty means the whole repository (§3.2.1). |
+| `worktree` | when `clean = false` | Identifies the exact modified state that was tested (§3.2.2). |
 
 `clean` and `untracked` are separate because they mean different things. A
-modified tracked file means *the tests did not run against `commit`* — the claim
-is unsound. Untracked files usually mean scratch work that did not affect the
-run, but can mean a file the build picked up. Producers MUST report both
-honestly; consumers decide what to do with each.
+modified tracked file means the tests ran against something other than `commit`.
+Untracked files usually mean scratch work that did not affect the run, but can
+mean a file the build picked up. Producers MUST report both honestly.
 
 A producer MUST NOT issue `clean = true` when it did not check. If it cannot
 determine cleanliness, it MUST NOT issue a certificate at all — a guess here
 invalidates everything downstream.
+
+#### 3.2.1 Scoping the claim to paths
+
+Requiring the *whole* repository to be clean is often stricter than the claim
+needs to be, and in a monorepo or multi-project workspace it is stricter than is
+achievable: a developer editing one component cannot certify another without
+first stashing unrelated work, and untracked build output anywhere blocks
+everything.
+
+`paths` narrows the claim to the part of the tree the tests depend on:
+
+```toml
+[certificate.vcs]
+repo      = "codetracer"
+commit    = "a858633c…"
+paths     = ["Cargo.lock", "src/db-backend"]
+clean     = true      # within `paths`
+untracked = false     # within `paths`
+```
+
+Such a certificate says nothing whatever about the rest of the repository, and
+says so explicitly. That is the point: an honest narrow claim rather than a
+dishonest broad one.
+
+Rules:
+
+- `clean`, `untracked` and `worktree` are always **relative to `paths`**.
+- A path naming a directory scopes the subtree beneath it; a path naming a file
+  scopes that file.
+- Paths are repo-relative, use `/` separators, never begin with `./` or end with
+  `/`, and are sorted and deduplicated in canonical form.
+- **A producer MUST NOT declare a scope narrower than the inputs it knows the
+  tests read.** This is the rule the feature rests on: a scope excluding a file
+  the tests actually consumed yields a certificate that is formally clean and
+  substantively false.
+- **A producer that cannot bound its tests' input set MUST NOT use scoping** and
+  MUST attest the whole repository instead. Scoping is for frameworks that know
+  what their tests read — through dependency capture, trace-based discovery, or
+  explicit declaration in their own config — and for no others.
+- Consumers MUST treat absent or empty `paths` as a whole-repository claim.
+
+The standard cannot verify that a scope is adequate; that is framework knowledge
+by construction. What it does is make the scope **explicit and signed**, so an
+inadequate scope is a stated claim that can be reviewed and disputed rather than
+an unstated assumption.
+
+#### 3.2.2 Testing a modified working tree
+
+Requiring a clean tree makes certification an ordering constraint: commit
+first, then test, then push. That is backwards from how people work, and it is
+the main reason a certificate requirement feels like a tax. Worse, it is the
+*uncommitted* state a developer most wants attested — the change they are about
+to push.
+
+A certificate MAY therefore express the tested state as **`commit` plus the
+modification applied on top of it**:
+
+```toml
+[certificate.vcs]
+repo      = "codetracer"
+commit    = "a858633c…"     # the base
+clean     = false           # the tree differed from that base
+untracked = false
+
+[certificate.vcs.worktree]
+tree      = "9f8e7d6c…"     # canonical content id of what was actually tested
+format    = "git-diff"      # how `patch_digest` was produced
+patch_digest = "blake3:4a1b…"   # over the exact patch bytes
+```
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `tree` | when the VCS provides one | The VCS's canonical content identifier for the tested state **within scope** (in git, a tree object id). |
+| `format` | when `patch_digest` is present | How the patch was produced, pinning the exact diff semantics. |
+| `patch_digest` | no | `<algo>:<hex>` over the exact bytes of the patch from `commit` to the tested state. |
+
+At least one of `tree` and `patch_digest` MUST be present.
+
+**Prefer `tree`.** Where the VCS has a canonical content identifier — git's tree
+object id does — it identifies the tested content exactly, is cheap to compute
+(`git write-tree`), and is stable by construction. Verification becomes a single
+comparison: the commit being evaluated has this tree, so its content *is* what
+was tested, whatever its message, author or parents.
+
+That last point is the practical payoff. A developer tests a dirty tree, commits
+it, and pushes: the resulting commit is not the one the certificate names, but
+its tree is identical, so the certificate still covers it. Certification stops
+constraining the order of work.
+
+**`patch_digest` is the portable fallback**, for VCSs without a canonical
+content id and for cases where a reviewer wants to see the change. It is
+strictly more fragile: diff output is not canonical, and the same change can
+serialize differently under different context, rename-detection or whitespace
+settings. A producer using it MUST pin those semantics in `format`, and a
+verifier MUST NOT compare digests across differing `format` values. This is
+exactly the fragility `tree` avoids, which is why it is the fallback and not the
+primary.
+
+A certificate MAY additionally carry the patch itself out of band; the standard
+does not embed it, because certificates travel in places (git notes) where an
+arbitrarily large blob is a poor fit.
+
+Rules:
+
+- `worktree` is REQUIRED when `clean = false` and MUST be absent when
+  `clean = true`. A dirty certificate without it identifies no state at all and
+  MUST be rejected.
+- Untracked files are part of the tested state when they are part of `tree`. A
+  producer MUST NOT report `untracked = false` merely because it excluded them
+  from `tree`; the two fields describe the tree, not the producer's intentions.
+- A producer MUST compute `tree` / `patch_digest` from the state it actually
+  executed against, not from the state at any other moment. A tree captured
+  before or after the run, with edits in between, attests to something that was
+  never tested.
+- **Scoping and modification compose.** When `paths` is present, `tree` covers
+  exactly the scope, and `patch_digest` is taken over a patch restricted to it.
+  Where the VCS cannot express the scope as one canonical content id, a producer
+  MUST use `patch_digest` rather than a whole-tree id, which would attest more
+  than the scope and less than the truth.
 
 ### 3.3 `[[certificate.command]]`
 

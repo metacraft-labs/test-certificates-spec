@@ -88,15 +88,40 @@ Every consumer, whatever its framework, MUST check:
 
 | Field | Rule |
 | ----- | ---- |
-| `vcs.commit` | Exact equality with the commit under evaluation |
-| `vcs.clean` | MUST be `true`. A modified tracked file means the tests did not run against `commit`, so the claim is unsound. |
+| `vcs.commit` | Exact equality with the commit under evaluation, **or** the base of a `worktree` claim that matches (§4.1.1) |
+| `vcs.clean` | When `true`, the tested state is `commit` itself. When `false`, `worktree` MUST identify it (§4.1.1). |
+| `vcs.paths` | When present, the claim covers only those paths. A consumer requiring broader coverage MUST reject it (§4.1.2). |
 | `vcs.untracked` | Consumer's choice. Untracked files usually mean scratch work, but can mean a file the build picked up. |
 | `platform` | Exact equality with the platform being satisfied |
 | `result` | MUST be `passed` |
 
-`vcs.clean = false` is not a weaker certificate; it is a certificate about a
-state that cannot be reconstructed. Consumers MUST reject it for any purpose
-that depends on the commit.
+#### 4.1.1 Matching a modified-worktree claim
+
+A certificate with `clean = false` does not describe `commit`; it describes
+`commit` plus the modification in `worktree`. A consumer matches it by comparing
+**content**, not commit identity:
+
+- With `tree`: the state under evaluation matches when its canonical content id
+  for the scope equals `worktree.tree`. In git this is a tree-oid comparison, and
+  it holds across commit metadata — so a certificate issued against a dirty tree
+  still covers the commit that tree was later committed as.
+- With `patch_digest` only: the consumer must be able to reproduce the patch from
+  `commit` to the state under evaluation, under the certificate's `format`, and
+  compare digests. A consumer that cannot reproduce that exact format MUST report
+  the certificate **unverifiable** (§7), not invalid.
+
+A `clean = false` certificate carrying no `worktree` identifies no state at all
+and MUST be rejected outright.
+
+#### 4.1.2 Scoped claims
+
+A certificate with `vcs.paths` covers only those paths, and says nothing about
+the rest of the tree. A consumer MUST check that the scope covers what it
+requires — a scoped certificate is not a whole-repository certificate, and
+treating it as one is the mistake this field exists to prevent.
+
+Whether a given scope is *adequate* for a set of targets is framework knowledge
+(§4.2), not something the standard can decide.
 
 ### 4.2 Framework-specific validity
 

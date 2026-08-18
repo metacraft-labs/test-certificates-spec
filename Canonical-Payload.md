@@ -37,8 +37,14 @@ key_id = "<key-id>"
 [certificate.vcs]
 repo = "<repo>"
 commit = "<commit>"
+paths = ["<p1>", "<p2>"]
 clean = true
 untracked = false
+
+[certificate.vcs.worktree]
+tree = "<content-id>"
+format = "<patch-format>"
+patch_digest = "<algo>:<hex>"
 
 [[certificate.command]]
 argv = ["<arg0>", "<arg1>"]
@@ -61,6 +67,12 @@ Rules:
 7. `argv` arrays are serialized like `targets` (§3) but **are never sorted or
    deduplicated** — an argument vector is ordered by nature, and repeated
    arguments are meaningful.
+8. `paths` is sorted and deduplicated like `targets`, and is **omitted entirely**
+   when the claim covers the whole repository — never emitted as `[]`. An omitted
+   key and an empty array are different payloads.
+9. `[certificate.vcs.worktree]` is **present only when `clean = false`**, follows
+   the `[certificate.vcs]` table after one blank line, and omits any of its three
+   keys that are absent.
 
 ## 3. `targets` is sorted
 
