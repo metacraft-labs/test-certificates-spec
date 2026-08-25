@@ -1,0 +1,12 @@
+{
+  "outcome": "unverifiable",
+  "reason": "the only candidate record is in a schema version this consumer does not implement; its fields cannot be trusted to show that it was irrelevant",
+  "unverifiable_because": "schema 'test-certificate.v2' is not implemented, so the record's relevance is undecidable",
+  "missing": [],
+  "unevaluated": [
+    {
+      "certificate": "future-macos.toml",
+      "why": "schema 'test-certificate.v2' is not implemented; platform and targets read out of it with a v1 parser cannot establish that it was irrelevant"
+    }
+  ]
+}

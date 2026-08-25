@@ -41,6 +41,10 @@ class Report:
         self.ignored: list[dict] = []      # other frameworks (§2)
         self.rejected: list[dict] = []     # evaluated, and not evidence (§4)
         self.unevaluated: list[dict] = []  # evaluation broke down (§7)
+        # Names of unevaluated records that are *potentially relevant* (§7.1).
+        # Only these can make the outcome unverifiable; the rest are reported
+        # but could not have changed the answer.
+        self.blocking: list[str] = []
         self.store_unreadable: str | None = None
         self.missing: list[dict] = []
         self.outcome = NOT_COVERED
@@ -99,6 +103,20 @@ def within_scope(required_paths: list[str] | None,
                for r in required_paths)
 
 
+def could_satisfy(cert: dict, requirement: dict) -> bool:
+    """Could this record, if it had verified, have met part of the requirement?
+
+    Verification.md §7.1. This is only ever asked of a record the consumer can
+    **interpret** — a v1 record whose fields mean what this consumer thinks
+    they mean. For a record in a schema version it does not implement the
+    question is not asked at all, because the answer would be read out of
+    fields it has just admitted it cannot interpret.
+    """
+    if cert.get("platform") not in requirement["platforms"]:
+        return False
+    return bool(set(cert.get("targets", [])) & set(requirement["targets"]))
+
+
 def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
              keys: dict | None, store_unreadable: str | None,
              report: Report) -> dict | None:
@@ -113,13 +131,23 @@ def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
     def reject(why: str) -> None:
         report.rejected.append({"certificate": name, "why": why})
 
-    def unevaluated(why: str) -> None:
+    def unevaluated(why: str, *, relevant: bool) -> None:
+        """Record a breakdown, and whether it can drive the outcome (§7.1)."""
         report.unevaluated.append({"certificate": name, "why": why})
+        if relevant:
+            report.blocking.append(name)
 
     # An unimplemented schema version is an evaluation breakdown, not a
     # verdict: the record may be perfectly good in a dialect we do not speak.
+    #
+    # It is ALWAYS potentially relevant (§7.1). We must not look at its
+    # `platform` or `targets` to decide it was irrelevant: reading them with a
+    # v1 parser means trusting an interpretation we have just said we do not
+    # have, and a later version may redefine those fields or widen the record's
+    # scope with a field this parser never looks at.
     if doc.get("schema") != rs.SCHEMA:
-        unevaluated(f"schema {doc.get('schema')!r} is not implemented")
+        unevaluated(f"schema {doc.get('schema')!r} is not implemented",
+                    relevant=True)
         return None
 
     cert = doc.get("certificate", {})
@@ -157,9 +185,11 @@ def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
             # under the certificate's `format` MUST report the certificate
             # unverifiable, not invalid (§4.1.1). This reference consumer
             # reproduces no patch formats at all.
+            # Interpretable, so §7.1 lets us ask whether it could have mattered.
             unevaluated(
                 f"patch_digest claim in format {worktree.get('format')!r} "
-                f"cannot be reproduced by this consumer")
+                f"cannot be reproduced by this consumer",
+                relevant=could_satisfy(cert, requirement))
             return None
 
     if not within_scope(requirement.get("paths"), vcs.get("paths")):
@@ -177,7 +207,12 @@ def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
             reject("unsigned, and this consumer requires signatures")
             return None
         if store_unreadable is not None:
-            unevaluated(f"authenticity undecidable: {store_unreadable}")
+            # The store could not answer, but this record IS interpretable, so
+            # §7.1 lets us say whether the answer could have mattered. A
+            # certificate for a platform nobody asked about contributes nothing
+            # however its signature would have checked out.
+            unevaluated(f"authenticity undecidable: {store_unreadable}",
+                        relevant=could_satisfy(cert, requirement))
             return None
         entry = (keys or {}).get(key_id)
         if entry is None:
@@ -248,16 +283,19 @@ def decide(case_dir: str) -> dict:
                                    "platform": platform,
                                    "targets": gap})
 
-    # --- Precedence (§7) --------------------------------------------------
-    # Covered wins when the requirement is met by certificates that were fully
-    # evaluated: something we could not read could only have added coverage,
-    # and telling an operator to fix their configuration in order to reach a
-    # conclusion already reached is the unhelpfulness the third value exists to
-    # avoid. Otherwise an evaluation breakdown outranks not-covered, because
-    # "run the tests" would be the wrong instruction.
+    # --- Precedence (§7.1) ------------------------------------------------
+    # 1. Covered wins when the requirement is met by certificates that were
+    #    fully evaluated. v1 coverage is monotonic — nothing subtracts — so a
+    #    record we could not read could only have added coverage, and telling
+    #    an operator to fix their configuration in order to reach a conclusion
+    #    already reached is the unhelpfulness the third value exists to avoid.
+    # 2. Otherwise a breakdown outranks not-covered, but only for records that
+    #    are *potentially relevant*: uninterpretable ones always, interpretable
+    #    ones only when their scope could have met part of the requirement.
+    # 3. Otherwise not-covered, naming the gaps.
     if not report.missing:
         report.outcome = COVERED
-    elif report.unevaluated:
+    elif report.blocking:
         report.outcome = UNVERIFIABLE
         report.missing = []
     else:

@@ -136,8 +136,16 @@
         "pins": "an unimplemented schema version is unverifiable, not not-covered."
       },
       {
+        "name": "unknown-schema-off-platform",
+        "pins": "a record the consumer cannot interpret is **potentially relevant whatever its fields appear to say**, so the outcome is `unverifiable` even though the record looks irrelevant."
+      },
+      {
         "name": "unreadable-store",
         "pins": "the third outcome. *We could not tell* is a different answer from *we could tell, and it is not covered*."
+      },
+      {
+        "name": "unreadable-store-off-platform",
+        "pins": "a record the consumer **can** interpret but could not verify makes the outcome `unverifiable` **only if its interpreted scope could satisfy some part of the requirement**. This one cannot, so the outcome is `not-covered`."
       },
       {
         "name": "unsigned-required",

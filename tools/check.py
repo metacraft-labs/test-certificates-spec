@@ -207,6 +207,24 @@ def check_verify(r: Results) -> None:
             "empty-key-store and unreadable-store do not collapse",
             f"{empty} / {unreadable}")
 
+    # The §7.1 relevance pair. Both cases carry an unevaluable record that
+    # looks like it is about another platform; they differ only in whether the
+    # consumer can interpret the record and so is entitled to believe that.
+    # An implementation that treats every unevaluable record as decisive
+    # answers both "unverifiable" and fails this.
+    def outcome_of(case: str) -> str:
+        with open(os.path.join(VECTORS, "verify", case, "expected.json"),
+                  encoding="utf-8") as f:
+            return json.load(f)["outcome"]
+
+    uninterpretable = outcome_of("unknown-schema-off-platform")
+    interpretable = outcome_of("unreadable-store-off-platform")
+    r.check(uninterpretable == "unverifiable"
+            and interpretable == "not-covered",
+            "an unevaluable record drives the outcome only when it is "
+            "potentially relevant (Verification.md §7.1)",
+            f"{uninterpretable} / {interpretable}")
+
 
 def sorted_missing(report: dict) -> list:
     return sorted((m["framework"], m["platform"], tuple(sorted(m["targets"])))

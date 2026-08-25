@@ -209,6 +209,17 @@ store_readable() {
   return 0
 }
 
+# Could this record, if it had verified, have met part of the requirement?
+# (§7.1) Only ever asked of a record we can INTERPRET — never of one whose
+# schema version we do not implement, where the fields would be read with the
+# wrong parser.
+could_satisfy() { # <cert> -> 0 when potentially relevant
+  cs_platform=$(tval "$1" platform)
+  grep -qxF "$cs_platform" "$tmp/req_platforms" || return 1
+  tlist "$1" targets | sed '/^$/d' > "$tmp/cert_targets"
+  grep -qxFf "$tmp/cert_targets" "$tmp/req_targets"
+}
+
 store_lookup() { # <store> <key_id> -> "status<TAB>public_key"
   awk -v want="$2" '
     /^\[\[key\]\]$/            { id=""; st=""; pk=""; next }
@@ -243,7 +254,7 @@ decide() { # <case dir> -> prints the outcome
   store_readable "$store" || store_ok=0
 
   : > "$tmp/contrib"      # surviving "platform<TAB>target" pairs
-  unevaluated=0
+  blocking=0              # a POTENTIALLY RELEVANT record could not be evaluated
 
   for cert in "$case_dir"/certificates/*.toml; do
     fw=$(tval "$cert" framework)
@@ -252,9 +263,11 @@ decide() { # <case dir> -> prints the outcome
     [ "$fw" = "$r_framework" ] || continue
 
     # An unimplemented schema version is an evaluation breakdown (§7), not a
-    # verdict about coverage.
+    # verdict about coverage -- and it is ALWAYS potentially relevant (§7.1).
+    # Reading this record's platform or targets to rule it out would mean
+    # trusting a v1 parser on a record we just said we cannot interpret.
     if [ "$(tval "$cert" schema)" != "test-certificate.v1" ]; then
-      unevaluated=1; continue
+      blocking=1; continue
     fi
     [ "$(tval "$cert" result)" = passed ] || continue
     [ "$(tval "$cert" repo)" = "$s_repo" ] || continue
@@ -270,8 +283,10 @@ decide() { # <case dir> -> prints the outcome
         # Content comparison, so it holds across commit metadata (§4.1.1).
         [ "$tree" = "$s_tree" ] || continue
       else
-        # patch_digest only, in a format this consumer cannot reproduce (§4.1.1)
-        unevaluated=1; continue
+        # patch_digest only, in a format this consumer cannot reproduce
+        # (§4.1.1). Interpretable, so §7.1 lets us ask if it could have mattered.
+        if could_satisfy "$cert"; then blocking=1; fi
+        continue
       fi
     fi
 
@@ -300,7 +315,10 @@ decide() { # <case dir> -> prints the outcome
       # Canonical-Payload.md §6: absent block and empty block both mean unsigned.
       [ -n "$key_id" ] && [ -n "$sig" ] && [ -n "$alg" ] || continue
       if [ "$store_ok" = 0 ]; then
-        unevaluated=1; continue
+        # The store could not answer, but this record is interpretable, so
+        # §7.1 lets us say whether that answer could have mattered.
+        if could_satisfy "$cert"; then blocking=1; fi
+        continue
       fi
       entry=$(store_lookup "$store" "$key_id")
       [ -n "$entry" ] || continue              # fail-closed (§3.1)
@@ -332,11 +350,13 @@ decide() { # <case dir> -> prints the outcome
     done < "$tmp/req_targets"
   done < "$tmp/req_platforms"
 
-  # Precedence (§7): covered when the requirement is met by what was fully
-  # evaluated; otherwise a breakdown outranks not-covered.
+  # Precedence (§7.1): covered when the requirement is met by what was fully
+  # evaluated -- v1 coverage is monotonic, so an unread record could only have
+  # added to it. Otherwise a breakdown outranks not-covered, but only for a
+  # record that was potentially relevant.
   if [ "$covered" = 1 ]; then
     printf 'covered\n'
-  elif [ "$unevaluated" = 1 ]; then
+  elif [ "$blocking" = 1 ]; then
     printf 'unverifiable\n'
   else
     printf 'not-covered\n'

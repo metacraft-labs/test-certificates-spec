@@ -250,14 +250,19 @@ boolean verifier passes its own tests and looks correct.
 | `not-covered` | **could tell**, and it is not | run the tests |
 | `unverifiable` | **could not tell** | fix the configuration; re-running tests changes nothing |
 
-Two pairs of cases exist precisely to hold the line:
+Three pairs of cases exist precisely to hold the line:
 
 | Pair | Outcomes | Why they differ |
 | ---- | -------- | --------------- |
 | `empty-key-store` vs `unreadable-store` | not-covered vs unverifiable | An empty store *answers*: nobody is trusted, fail-closed. An unreadable store answers nothing. |
 | `dirty-no-worktree` vs `unknown-schema` | not-covered vs unverifiable | A record missing a required v1 field is decidably invalid. A record in a schema version this consumer does not implement may be perfectly good and simply unreadable here. |
+| `unreadable-store-off-platform` vs `unknown-schema-off-platform` | not-covered vs unverifiable | Both carry an unevaluable record that *appears* to be about another platform. Only in the first can the consumer interpret the record, and so actually know the appearance is true (Verification.md §7.1). |
 
-An implementation that returns two values passes neither pair.
+An implementation that returns two values passes neither of the first two
+pairs. The third catches a subtler error that a three-valued implementation can
+still make: treating every record it could not evaluate as decisive, and
+reporting `unverifiable` for a configuration fault that could not have changed
+the verdict.
 
 `unreadable-store` models unreadability as **unparseable content**, because file
 modes do not survive git — only the executable bit is recorded — and a
@@ -282,18 +287,21 @@ found these, and the listed documents were changed:
 | Standard.md §7 said a verifier *rejects* an unknown `schema`; Verification.md §7 listed an unimplemented schema version as *unverifiable*. | Unverifiable — Standard.md §7 now defers to Verification.md §7 | `verify/unknown-schema` |
 | Verification.md §3.1 called a missing or empty store fail-closed while §7 called an unreadable store unverifiable, without distinguishing them. | Missing/empty answers the question (not-covered); unreadable does not (unverifiable) — Verification.md §3.1 | `verify/empty-key-store`, `verify/unreadable-store` |
 | Which outcome wins when one certificate cannot be evaluated and others cover the requirement? | Covered, with the unevaluated record still reported — Verification.md §7 | `verify/unverifiable-but-covered` |
+| Does an unevaluable record that looks irrelevant still force `unverifiable`? §7.1 said "anything that could have changed the answer" without saying who may judge that. | Only a record you can **interpret** can be judged irrelevant; an uninterpretable one is potentially relevant by default — Verification.md §7.1 | `verify/unknown-schema-off-platform`, `verify/unreadable-store-off-platform` |
 | Where does the *requirement* live in a verification vector? Conformance.md §3 put `platform` in `state.json` and named no home for targets or signature policy. | A separate `requirement.json` — Conformance.md §3 | every `verify/` vector |
 
 ## Cases beyond the required set
 
 Conformance.md requires 16 payload cases and 11 verification cases. This suite
-adds three, each marked as such in its `pins.md`:
+adds five, each marked as such in its `pins.md`:
 
 | Case | Why |
 | ---- | --- |
 | `payload/dirty-tree-and-patch` | The fourth worktree shape. `dirty-tree`, `dirty-patch-only` and `clean-no-worktree` cover three; nothing else shows all three worktree keys in their fixed order. |
 | `verify/unknown-schema` | Added with the Standard.md §7 clarification above. |
 | `verify/unverifiable-but-covered` | Added with the Verification.md §7 precedence rule above. |
+| `verify/unknown-schema-off-platform` | Added with the Verification.md §7.1 relevance rule above. |
+| `verify/unreadable-store-off-platform` | Its mirror, and the reason the rule is not simply "assume everything unevaluable mattered". |
 
 ## What this suite does not cover
 

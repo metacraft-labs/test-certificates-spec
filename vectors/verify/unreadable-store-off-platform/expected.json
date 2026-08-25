@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "the key store is unreadable, but the only certificate it denies an answer to is scoped to a platform and a target the requirement never asks about, so it could not have changed the verdict",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "unevaluated": [
+    {
+      "certificate": "macos-bench.toml",
+      "why": "authenticity undecidable: registered-keys.toml could not be read; reported, but not potentially relevant - it covers t-bench on macos/arm64"
+    }
+  ]
+}

@@ -130,10 +130,22 @@ Required coverage:
 That last one is the reason the outcome is three-valued, and it is the case an
 implementation is most likely to collapse.
 
-The suite additionally carries two cases that arrived with prose clarifications,
-per "Maintaining the vectors" below: `unknown-schema` (unverifiable — an
-unimplemented schema version) and `unverifiable-but-covered` (covered — a record
-that could not be read, next to a requirement already met without it).
+The suite additionally carries four cases that arrived with prose
+clarifications, per "Maintaining the vectors" below:
+
+| Vector | Expected |
+| ------ | -------- |
+| `unknown-schema` | **unverifiable** — an unimplemented schema version |
+| `unverifiable-but-covered` | **covered** — a record that could not be read, next to a requirement already met without it |
+| `unknown-schema-off-platform` | **unverifiable** — a record that *looks* irrelevant but cannot be interpreted, so its irrelevance cannot be established |
+| `unreadable-store-off-platform` | **not-covered** — a record that could not be verified but *can* be interpreted, and its scope could not have met the requirement |
+
+The last two are a deliberate pair, like `empty-key-store` / `unreadable-store`
+before them. Both carry an unevaluable record that appears to be about another
+platform entirely; they differ only in whether the consumer is entitled to
+believe the appearance ([Verification §7.1](./Verification.md#71-precedence)).
+An implementation that answers them the same way has collapsed the distinction
+in one direction or the other.
 
 ## Using the suite
 

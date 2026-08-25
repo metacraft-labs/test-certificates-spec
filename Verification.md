@@ -241,11 +241,58 @@ reproduce.
 A single evaluation can produce several of these at once, so the order is fixed:
 
 1. **Covered** wins when every requirement is met by certificates that were
-   evaluated end to end. Something the consumer could not read could only ever
-   have *added* coverage, so reporting unverifiable here would send an operator
-   to fix a configuration problem in order to reach a conclusion already
-   reached. The unevaluated records MUST still be named in the report.
-2. Otherwise **unverifiable**, if anything that could have changed the answer
-   could not be evaluated. "Run the tests" would be the wrong instruction while
-   an unread certificate might already cover the gap.
+   evaluated end to end. The unevaluated records MUST still be named in the
+   report.
+2. Otherwise **unverifiable**, if any record that could not be evaluated is
+   **potentially relevant** in the sense defined below. "Run the tests" would be
+   the wrong instruction while an unread certificate might already cover the
+   gap.
 3. Otherwise **not covered**, naming the gaps (§5).
+
+#### Why rule 1 is safe: coverage is monotonic
+
+Rule 1 rests on an invariant worth stating explicitly, because a future schema
+version could break it: **in v1, coverage only ever grows.** Every certificate
+either adds targets to a platform's union (§5) or contributes nothing. None can
+subtract: a record that is not evidence — wrong platform, revoked key, `result`
+other than `passed` — is discarded, never counted *against* anything, and this
+format defines no record that revokes or contradicts another.
+
+So a record the consumer could not read could only ever have *added* coverage.
+Reporting unverifiable once the requirement is already met would send an
+operator to fix a configuration problem in order to reach a conclusion that has
+already been reached. A schema version introducing a negative claim — a
+withdrawal, a contradiction, a failing result that vetoes a passing one — would
+invalidate this reasoning and would need a different rule.
+
+#### Potential relevance is only assessable for a record you can interpret
+
+The two ways evaluation breaks down are not alike, and the difference decides
+rule 2:
+
+- **A record the consumer cannot interpret** — an unimplemented `schema`
+  version — MUST be treated as potentially relevant, whatever its fields appear
+  to say. Reading `platform` or `targets` out of a v2 record with a v1 parser
+  and concluding the record was irrelevant means trusting an interpretation the
+  consumer has just admitted it does not have. A later version may redefine what
+  those fields mean, or add a field that widens what the record covers.
+  **Relevance is itself a schema-dependent judgement**, so for an
+  uninterpretable record it is undecidable, and MUST be assumed.
+
+- **A record the consumer can interpret but could not verify** — one denied an
+  answer by an unreadable key store (§3.1), or carrying a `patch_digest` in a
+  `format` it cannot reproduce (§4.1.1) — is potentially relevant **only if its
+  interpreted scope could satisfy some part of the requirement**. Its fields are
+  readable, in a schema this consumer implements, so a certificate for a
+  platform that is not required, or naming no required target, could not have
+  changed the answer whatever its signature would have said. Such a record MUST
+  still be named in the report, but it MUST NOT on its own make the outcome
+  unverifiable.
+
+The distinction is between *"I could not tell whether this mattered"* and *"I
+could tell that it did not."* Collapsing it in either direction is a defect.
+Treating every unevaluable record as decisive reports unverifiable — and sends
+an operator after a configuration fault — for something that could not have
+affected the verdict. Treating an uninterpretable one as irrelevant silently
+discards a certificate that might have covered the gap, which is the failure
+this whole section exists to prevent.

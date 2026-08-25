@@ -4,10 +4,12 @@
 # NON-NORMATIVE. See tools/README.md.
 #
 # A conformance suite that passes whatever you feed it pins nothing. This
-# script takes a throwaway copy of the repository, damages one byte at a time,
+# script takes a throwaway copy of the repository, damages one thing at a time,
 # and asserts that the checks go red — once for a canonical payload, once for a
 # signature, and once for a signature inside a verification vector, so all
-# three groups are shown to be load-bearing.
+# three groups are shown to be load-bearing. A fourth flips a record's schema
+# version to show that the §7.1 relevance distinction is load-bearing too,
+# which no amount of signature checking would catch.
 #
 # Every check is run twice per corruption: with the Python reference tools and
 # with the POSIX-shell walker. A corruption caught by only one of them would
@@ -115,6 +117,28 @@ expect_red "reference verifier stops reporting covered" \
 expect_red "shell walker stops reporting covered" \
   sh "$work/tools/walk-vectors.sh" verify
 cp "$work/cert.orig" "$target"
+printf '\n'
+
+# --- 4. the §7.1 relevance distinction -------------------------------------
+# Not a byte flip but a property flip, and the only one of these corruptions
+# that a fully working signature check would sail straight past.
+#
+# `unknown-schema-off-platform` reports unverifiable *because* its record
+# cannot be interpreted: its platform and targets look irrelevant, but a v1
+# parser is not entitled to that reading. Declare the very same record v1 and
+# the reading becomes legitimate, the record becomes provably irrelevant, and
+# the outcome MUST fall to not-covered. An implementation that assumed every
+# unevaluable record was decisive would report unverifiable both ways and
+# never notice.
+printf '4. schema version flipped in vectors/verify/unknown-schema-off-platform\n'
+target=$work/vectors/verify/unknown-schema-off-platform/certificates/future-macos.toml
+cp "$target" "$work/schema.orig"
+corrupt "$target" 'schema = "test-certificate.v2"' 'schema = "test-certificate.v1"'
+expect_red "reference verifier stops reporting unverifiable" \
+  python3 "$work/tools/check.py" verify
+expect_red "shell walker stops reporting unverifiable" \
+  sh "$work/tools/walk-vectors.sh" verify
+cp "$work/schema.orig" "$target"
 printf '\n'
 
 printf '%d as expected, %d wrong\n' "$pass" "$fail"

@@ -137,9 +137,17 @@ literally as UTF-8, never as `\uXXXX`. A verifier MUST accept `\uXXXX` on input
 for interoperability, but MUST NOT produce it when re-serializing for signature
 checking.
 
-This escape set is exactly JSON's, which is convenient: a conforming JSON string
-encoder that emits non-ASCII literally already produces conforming TOML basic
-strings for every value this standard permits.
+**The table above is the authority.** A character absent from it is emitted
+literally, and no other escape is ever produced.
+
+These seven are also JSON's *mandatory* escapes, which is convenient but is not
+a licence to hand the job to a JSON encoder unchecked. JSON additionally
+**permits** `\/`, and `/` is an ordinary character here that appears in almost
+every certificate: `platform` is `os/arch`, and every multi-segment entry in
+`paths` contains one. An encoder that escapes it produces `linux\/amd64`, which
+is valid JSON, invalid here, and a different signature. A JSON string encoder
+may therefore be reused only if it emits non-ASCII literally **and** leaves `/`
+alone. Where an encoder and this table disagree, the table wins.
 
 **Other control characters are not representable.** A TOML basic string cannot
 carry a raw control character, and this table defines no escape for the ones it
