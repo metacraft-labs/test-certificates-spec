@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "the signing key is registered but revoked; the signature is still cryptographically valid",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "revoked-signer.toml",
+      "why": "key_id 'example-key-2025-q4' has status = revoked"
+    }
+  ]
+}

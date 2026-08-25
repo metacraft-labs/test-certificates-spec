@@ -23,6 +23,13 @@ It deliberately does **not** specify who may issue one, when, or what anybody
 should do about it — those are policy, and policy belongs to the adopting
 project.
 
+It also ships the specification's executable half. `vectors/` holds byte-exact
+canonical payloads, real signatures that must verify and must fail, and
+verification decisions with their expected outcomes — plain data, no runner, so
+an implementation in any language can walk it. Conformance is something an
+implementation demonstrates, not something its author concludes from having read
+the document carefully.
+
 ## Documents
 
 | Document | Contents |
@@ -31,6 +38,8 @@ project.
 | [Canonical-Payload.md](./Canonical-Payload.md) | The exact byte serialization a signature covers |
 | [Verification.md](./Verification.md) | Validity, signature checking, key stores, coverage |
 | [Transport.md](./Transport.md) | Carrying certificates alongside commits |
+| [Conformance.md](./Conformance.md) | What the conformance suite contains, and why |
+| [vectors/](./vectors/README.md) | The suite itself — byte-exact vectors, plain data, no runner |
 
 ## What is in scope, and what is not
 

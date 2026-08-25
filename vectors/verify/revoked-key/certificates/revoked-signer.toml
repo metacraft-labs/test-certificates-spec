@@ -1,0 +1,24 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-integration", "t-unit"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+key_id = "example-key-2025-q4"
+
+[certificate.vcs]
+repo = "example"
+commit = "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4"
+clean = true
+untracked = false
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-integration,t-unit"]
+
+[certificate.signature]
+algorithm = "ed25519"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgcWlnNGgf680RDA6obLISIqiF+qjsNMUjVlT/f5fps4oAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEASjsdeTemR4t6m1mvyTI6dsyy2jpieU8Vplidq0bnS81/eFwsYW4ldsLJ9BsNKMOOKEkNy6LqOEZ6eQjt1/J0G"

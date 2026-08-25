@@ -1,0 +1,5 @@
+# Byte-compiled output from the non-normative authoring tools in tools/.
+# Nothing generated belongs in this repository: the vectors are the artifact,
+# and they are checked in by hand.
+__pycache__/
+*.py[cod]

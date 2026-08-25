@@ -1,0 +1,12 @@
+{
+  "outcome": "unverifiable",
+  "reason": "the only candidate certificate declares a schema version this consumer does not implement",
+  "unverifiable_because": "schema 'test-certificate.v2' is not implemented",
+  "missing": [],
+  "unevaluated": [
+    {
+      "certificate": "future.toml",
+      "why": "schema 'test-certificate.v2' is not implemented"
+    }
+  ]
+}

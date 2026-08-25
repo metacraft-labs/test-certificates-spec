@@ -1,0 +1,11 @@
+schema = "registered-keys.v1"
+
+[[key]]
+key_id = "example-key-2026-q2"
+public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEmtYLuqGuZVlbHoUH3ickVyodoVoCsY282/opuFwJQL INSECURE test-certificates vector key (publicly disclosed)"
+status = "active"
+
+[[key]]
+key_id = "example-key-2025-q4"
+public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHFpZzRoH+vNEQwOqGyyEiKohfqo7DTFI1ZU/3+X6bOK INSECURE test-certificates vector key #2 (publicly disclosed)"
+status = "revoked"

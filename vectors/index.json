@@ -1,0 +1,156 @@
+{
+  "schema": "test-certificate-vectors.v1",
+  "namespace": "test-certificate-v1",
+  "groups": {
+    "payload": [
+      {
+        "name": "argv-duplicates",
+        "pins": "repeated arguments are retained, in place."
+      },
+      {
+        "name": "argv-empty-string",
+        "pins": "an empty argument survives as `\"\"`."
+      },
+      {
+        "name": "clean-no-worktree",
+        "pins": "worktree shape 3 of 4 — absent, and required to be absent; plus `untracked` moving independently of `clean`."
+      },
+      {
+        "name": "dirty-patch-only",
+        "pins": "worktree shape 2 of 4 — the portable fallback, with no `tree`."
+      },
+      {
+        "name": "dirty-tree",
+        "pins": "worktree shape 1 of 4 — `tree` alone."
+      },
+      {
+        "name": "dirty-tree-and-patch",
+        "pins": "worktree shape 4 of 4 — all three keys, in the fixed order."
+      },
+      {
+        "name": "escapes",
+        "pins": "every escape in the table, only those escapes, and the fact that sorting happens **before** escaping."
+      },
+      {
+        "name": "minimal",
+        "pins": "the baseline shape — required fields only, every optional key absent rather than empty."
+      },
+      {
+        "name": "multiple-commands",
+        "pins": "command entries stay in execution order, each preceded by exactly one blank line."
+      },
+      {
+        "name": "non-ascii-literal",
+        "pins": "UTF-8 is emitted literally, and no Unicode normalization is applied."
+      },
+      {
+        "name": "scoped",
+        "pins": "`paths` is present, sorted, deduplicated, and sits between `commit` and `clean`."
+      },
+      {
+        "name": "signed",
+        "pins": "`key_id` is present and last in `[certificate]`, after `issuer`."
+      },
+      {
+        "name": "targets-duplicates",
+        "pins": "duplicate target names are removed before sorting, while the same repetition survives verbatim inside `argv`."
+      },
+      {
+        "name": "targets-single",
+        "pins": "the one-element array has no separator and no trailing comma."
+      },
+      {
+        "name": "targets-unicode",
+        "pins": "sorting is over UTF-8 **bytes** — not locale collation, and not UTF-16 code units."
+      },
+      {
+        "name": "targets-unsorted-input",
+        "pins": "`targets` is sorted on output even though the input is in run order — and `argv` is *not*, in the same vector."
+      },
+      {
+        "name": "unscoped",
+        "pins": "an empty scope is a whole-repository claim, and is omitted from the payload entirely."
+      }
+    ],
+    "signature": [
+      {
+        "name": "escapes",
+        "pins": "a signature over a payload containing every escape in the table, including the sort-before-escape ordering trap."
+      },
+      {
+        "name": "minimal",
+        "pins": "the happy path — the canonical payload of `vectors/payload/minimal`, signed under the namespace the standard names, and verifying against the registered public key."
+      },
+      {
+        "name": "mutated-payload",
+        "pins": "the signature covers the payload bytes, and one flipped bit is enough. **This vector MUST fail.**"
+      },
+      {
+        "name": "unicode",
+        "pins": "a signature over a payload full of multi-byte UTF-8, so an implementation that re-encodes or escapes non-ASCII fails at the signature rather than silently producing a different claim."
+      },
+      {
+        "name": "wrong-key",
+        "pins": "the signature must verify **against the registered key**, not merely be a valid signature. **This vector MUST fail.**"
+      },
+      {
+        "name": "wrong-namespace",
+        "pins": "domain separation is applied, not ignored. **This vector MUST fail.**"
+      }
+    ],
+    "verify": [
+      {
+        "name": "coverage-union",
+        "pins": "required coverage is the **union** of several certificates, not a property any single one has to satisfy."
+      },
+      {
+        "name": "dirty-no-worktree",
+        "pins": "a dirty certificate with no `worktree` is malformed, and malformed is decidably invalid — not unverifiable."
+      },
+      {
+        "name": "dirty-tree-differs",
+        "pins": "the content comparison is an equality test, and failing it is an ordinary not-covered."
+      },
+      {
+        "name": "dirty-tree-matches",
+        "pins": "a modified-worktree claim is matched by **content**, not by commit identity."
+      },
+      {
+        "name": "empty-key-store",
+        "pins": "an empty key store means \"no signers are trusted\", never \"no restrictions\"."
+      },
+      {
+        "name": "other-framework",
+        "pins": "an unrecognised `framework` is **ignored** — neither counted as evidence nor treated as an error."
+      },
+      {
+        "name": "revoked-key",
+        "pins": "revocation beats cryptography, and it is a status flip rather than a deletion."
+      },
+      {
+        "name": "scope-too-narrow",
+        "pins": "a scoped certificate is not a whole-repository certificate."
+      },
+      {
+        "name": "unknown-schema",
+        "pins": "an unimplemented schema version is unverifiable, not not-covered."
+      },
+      {
+        "name": "unreadable-store",
+        "pins": "the third outcome. *We could not tell* is a different answer from *we could tell, and it is not covered*."
+      },
+      {
+        "name": "unsigned-required",
+        "pins": "a consumer that requires signatures rejects unsigned certificates outright — and both spellings of \"unsigned\" mean the same thing."
+      },
+      {
+        "name": "unverifiable-but-covered",
+        "pins": "precedence — unverifiable wins over not-covered, but not over a requirement already met."
+      },
+      {
+        "name": "wrong-platform",
+        "pins": "certificates for another platform contribute nothing."
+      }
+    ]
+  }
+}

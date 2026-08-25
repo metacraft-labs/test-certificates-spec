@@ -74,6 +74,13 @@ algorithm = "ed25519"
 value     = "base64(detached signature over the canonical payload)"
 ```
 
+The alignment above is for readability. It is **not** canonical form, which
+puts exactly one space either side of `=`
+([Canonical-Payload §2](./Canonical-Payload.md#2-structure)). A certificate may
+be written either way and must verify either way, because a verifier
+reconstructs the payload from the parsed fields rather than from the received
+bytes ([Canonical-Payload §5](./Canonical-Payload.md#5-verifying-against-the-payload)).
+
 ### 3.1 Fields
 
 | Field | Required | Meaning |
@@ -91,9 +98,13 @@ value     = "base64(detached signature over the canonical payload)"
 | `command` | yes, ≥1 | The commands actually executed (§3.3). |
 | `signature` | no | Detached signature over the canonical payload (§6). |
 
-A conforming producer MUST emit every required field. A conforming verifier MUST
-reject a record missing any required field, and MUST reject an unrecognised
-`schema`.
+A conforming producer MUST emit every required field, and MUST name at least one
+target and at least one command — a certificate covering nothing, or recording
+no command, asserts nothing.
+
+A conforming verifier MUST reject a record missing any required field, and MUST
+NOT treat a record with an unrecognised `schema` as evidence. The two are not
+the same failure: see §7.
 
 ### 3.2 `[certificate.vcs]`
 
@@ -194,7 +205,7 @@ untracked = false
 
 [certificate.vcs.worktree]
 tree      = "9f8e7d6c…"     # canonical content id of what was actually tested
-format    = "git-diff"      # how `patch_digest` was produced
+format    = "git-diff --no-renames -U3"   # how `patch_digest` was produced
 patch_digest = "blake3:4a1b…"   # over the exact patch bytes
 ```
 
@@ -226,6 +237,14 @@ settings. A producer using it MUST pin those semantics in `format`, and a
 verifier MUST NOT compare digests across differing `format` values. This is
 exactly the fragility `tree` avoids, which is why it is the fallback and not the
 primary.
+
+`format` is an **opaque identifier compared by exact string equality**. The
+standard defines no vocabulary for it and parses no structure out of it, so a
+producer MUST choose a value that pins *every* option affecting the patch bytes
+— context lines, rename detection, whitespace handling, the tool and its
+version if they matter. A bare `"git-diff"` is a poor value precisely because
+two producers can both claim it and disagree on the bytes, and exact-equality
+comparison would then match digests that were never comparable.
 
 A certificate MAY additionally carry the patch itself out of band; the standard
 does not embed it, because certificates travel in places (git notes) where an
@@ -345,7 +364,10 @@ Domain separation is not optional. Without it, a signature obtained for another
 purpose can be replayed as a certificate signature over identical bytes.
 
 `algorithm` MUST be `ed25519`; `value` MUST be base64 of the detached signature
-blob.
+blob — RFC 4648 §4 (the standard alphabet), padded, on a single line, with no
+embedded whitespace and no armor. `ssh-keygen` writes the armored
+`-----BEGIN SSH SIGNATURE-----` form; converting between the two is pure
+framing, and the blob is what the field carries.
 
 ### 6.2 Issuance integrity
 
@@ -378,7 +400,12 @@ A **conforming producer**:
 
 A **conforming verifier**:
 
-- rejects records with unknown `schema` or missing required fields
+- accepts no record with an unknown `schema` or a missing required field as
+  evidence — but distinguishes the two when reporting. A record missing a
+  required v1 field is decidably invalid and contributes nothing; a record
+  declaring a `schema` version this verifier does not implement may be a
+  perfectly good certificate it cannot read, and is reported **unverifiable**
+  ([Verification §7](./Verification.md#7-reporting))
 - filters by `framework` and ignores unrecognised ones rather than failing (§4)
 - checks the VCS binding (§3.2) and evaluates coverage as a union
   ([Verification](./Verification.md))

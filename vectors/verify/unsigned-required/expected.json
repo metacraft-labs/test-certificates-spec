@@ -1,0 +1,24 @@
+{
+  "outcome": "not-covered",
+  "reason": "signatures are required, and both certificates are unsigned in the two permitted spellings",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "a-no-signature-block.toml",
+      "why": "unsigned: no [certificate.signature] table"
+    },
+    {
+      "certificate": "b-empty-signature-block.toml",
+      "why": "unsigned: empty algorithm and value"
+    }
+  ]
+}

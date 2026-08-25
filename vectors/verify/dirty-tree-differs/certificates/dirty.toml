@@ -1,0 +1,27 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-integration", "t-unit"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+key_id = "example-key-2026-q2"
+
+[certificate.vcs]
+repo = "example"
+commit = "cc11223344556677889900aabbccddeeff001122"
+clean = false
+untracked = false
+
+[certificate.vcs.worktree]
+tree = "1122334455667788990011223344556677889900"
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-integration,t-unit"]
+
+[certificate.signature]
+algorithm = "ed25519"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEDgU5cc21C4RsAAa4EzkpQFOmS7sZTEKXr+fwsXr7Ni/tXesvbBTxNDGvxHCwx7L309YVJDw8ZYxYNfV7FkkZMA"

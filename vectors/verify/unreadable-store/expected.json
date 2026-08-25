@@ -1,0 +1,12 @@
+{
+  "outcome": "unverifiable",
+  "reason": "the key store could not be read, so authenticity could not be determined for any certificate",
+  "unverifiable_because": "registered-keys.toml is not parseable",
+  "missing": [],
+  "unevaluated": [
+    {
+      "certificate": "signed.toml",
+      "why": "authenticity undecidable: registered-keys.toml could not be read"
+    }
+  ]
+}

@@ -5,7 +5,9 @@ the most unforgiving part of this standard: two implementations that disagree
 here by a single byte produce signatures neither can verify, while agreeing
 perfectly about everything else.
 
-Everything below is normative.
+Everything below is normative. Every rule here is pinned by a byte-exact vector
+in [`vectors/payload/`](./vectors/README.md); when the prose and a vector
+appear to disagree, that is a defect worth reporting, not a choice to make.
 
 ## 1. Encoding
 
@@ -66,18 +68,43 @@ Rules:
    At least one entry is required.
 7. `argv` arrays are serialized like `targets` (§3) but **are never sorted or
    deduplicated** — an argument vector is ordered by nature, and repeated
-   arguments are meaningful.
+   arguments are meaningful. Each entry carries at least `argv[0]`; an empty
+   `argv` describes no command and MUST NOT be emitted. An empty *argument*,
+   by contrast, is an ordinary argument and is emitted as `""`.
 8. `paths` is sorted and deduplicated like `targets`, and is **omitted entirely**
    when the claim covers the whole repository — never emitted as `[]`. An omitted
    key and an empty array are different payloads.
 9. `[certificate.vcs.worktree]` is **present only when `clean = false`**, follows
    the `[certificate.vcs]` table after one blank line, and omits any of its three
    keys that are absent.
+10. **Every value is a quoted string except `clean` and `untracked`.** In
+    particular `issued_at` is a TOML *basic string*, never a bare TOML datetime,
+    and its characters are copied verbatim — nothing re-formats the timestamp.
+    Since RFC 3339 spells the same instant as both `Z` and `+00:00`, and the two
+    are different bytes and therefore different signatures, producers MUST use
+    the `Z` form.
 
 ## 3. `targets` is sorted
 
 `targets` MUST be serialized in **ascending byte order** (a plain lexicographic
-sort over the UTF-8 bytes), not in the order the targets ran.
+sort over the UTF-8 bytes), not in the order the targets ran. It MUST contain at
+least one target: a certificate covering nothing supports no claim, and
+`targets = []` is not a payload this standard defines.
+
+Three things the sort is **not**, each of which is some language's default:
+
+- It is not **locale collation**. Collation folds case and accents, so `Zebra`
+  would sort next to `zebra` and `äpple` next to `apple`.
+- It is not **UTF-16 code-unit order**. A character above the BMP encodes as a
+  surrogate pair beginning `D800`–`DBFF`, which compares *below* `E000`–`FFFF`,
+  reversing the byte order for those pairs.
+- It is not a sort of the **escaped rendering**. Escaping happens after
+  sorting, over values already in order. The two differ whenever a value
+  contains an escapable character: a value containing TAB sorts by `09`, while
+  its rendering `\t` would sort by `5C`.
+
+Equivalently: sort by the raw UTF-8 bytes of the value, then escape (§4), then
+join.
 
 The array form is `["a", "b"]` — an inline array, elements separated by a comma
 and a single space, no trailing comma, no spaces inside the brackets.
@@ -109,6 +136,23 @@ No other character is escaped — in particular, non-ASCII characters are emitte
 literally as UTF-8, never as `\uXXXX`. A verifier MUST accept `\uXXXX` on input
 for interoperability, but MUST NOT produce it when re-serializing for signature
 checking.
+
+This escape set is exactly JSON's, which is convenient: a conforming JSON string
+encoder that emits non-ASCII literally already produces conforming TOML basic
+strings for every value this standard permits.
+
+**Other control characters are not representable.** A TOML basic string cannot
+carry a raw control character, and this table defines no escape for the ones it
+omits, so a value containing any character in `U+0000`–`U+001F` other than the
+five above, or `U+007F`, has no canonical form. Producers MUST NOT emit one; a
+verifier encountering one MUST reject the record as malformed rather than invent
+an escape for it. Inventing one would be a repair, which §5 forbids.
+
+**No normalization is applied.** Values are emitted as the exact sequence of
+code points parsed. A precomposed `é` (`U+00E9`) and a decomposed `e` +
+`U+0301` are different values: they are not folded together, not deduplicated
+against each other in `targets`, and they sort by their bytes like anything
+else. Normalizing would silently change what a signature covers.
 
 ## 5. Verifying against the payload
 

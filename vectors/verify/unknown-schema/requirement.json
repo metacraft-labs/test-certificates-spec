@@ -1,0 +1,15 @@
+{
+  "frameworks_implemented": [
+    "example-framework"
+  ],
+  "framework": "example-framework",
+  "targets": [
+    "t-integration",
+    "t-unit"
+  ],
+  "platforms": [
+    "linux/amd64"
+  ],
+  "require_signature": true,
+  "paths": null
+}

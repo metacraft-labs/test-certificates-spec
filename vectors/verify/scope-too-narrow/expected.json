@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "the certificate is scoped to src/db-backend; the requirement is for the whole repository",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "scoped.toml",
+      "why": "vcs.paths scopes the claim to ['src/db-backend'], narrower than the whole-repository requirement"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# This key store is deliberately UNREADABLE.
+#
+# Unreadability is modelled as unparseable content because file modes
+# do not survive git (only the executable bit is recorded) and a
+# permission-denied store cannot be shipped as data. What a consumer
+# must do is identical either way: it could not determine whether the
+# signer is trusted, so it MUST report unverifiable.
+#
+# The line below is not valid TOML.
+[[key
+key_id = "example-key-2026-q2
+status = active

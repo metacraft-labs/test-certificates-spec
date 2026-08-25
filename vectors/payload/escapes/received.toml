@@ -1,0 +1,31 @@
+# A deliberately NON-canonical rendering of this vector's field values.
+# Parsing it MUST yield exactly canonical.txt (Canonical-Payload.md §5).
+schema   = 'test-certificate.v1'
+
+[certificate.vcs]
+untracked = false
+clean     = true
+commit    = "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4"
+repo      = "example"
+paths     = []
+
+[[certificate.command]]
+argv = [
+  "example-test",
+  "run",
+  "--filter",
+  "a/b$c 'q' # hash",
+]
+
+[certificate]
+issuer     = "runner\u0009A\u000AB\u000DC\u0008D\u000CE"
+result     = "passed"
+targets    = [ "t-a\u0021b", "t-a\u0009b" ]
+issued_at  = "2026-06-23T10:14:33Z"
+platform   = "linux/amd64"
+project    = 'ex\ample "quoted"'
+framework  = "example-framework"
+
+[certificate.signature]
+algorithm = ""
+value     = ""

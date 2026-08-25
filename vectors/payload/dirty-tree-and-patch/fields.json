@@ -1,0 +1,35 @@
+{
+  "schema": "test-certificate.v1",
+  "certificate": {
+    "framework": "example-framework",
+    "project": "example",
+    "platform": "linux/amd64",
+    "targets": [
+      "t-unit"
+    ],
+    "result": "passed",
+    "issued_at": "2026-06-23T10:14:33Z",
+    "issuer": "example-runner@build-host-1",
+    "vcs": {
+      "repo": "example",
+      "commit": "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4",
+      "clean": false,
+      "untracked": false,
+      "worktree": {
+        "tree": "9f8e7d6c5b4a3928170695e4d3c2b1a099887766",
+        "format": "git-diff --no-renames -U3",
+        "patch_digest": "blake3:4a1b2c3d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+      }
+    },
+    "command": [
+      {
+        "argv": [
+          "example-test",
+          "run",
+          "--targets",
+          "t-unit"
+        ]
+      }
+    ]
+  }
+}

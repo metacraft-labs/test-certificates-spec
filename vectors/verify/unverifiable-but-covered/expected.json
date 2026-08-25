@@ -1,0 +1,11 @@
+{
+  "outcome": "covered",
+  "reason": "the requirement is fully covered by certificates that were fully evaluated; the unreadable one could not have changed the answer",
+  "missing": [],
+  "unevaluated": [
+    {
+      "certificate": "c-future.toml",
+      "why": "schema 'test-certificate.v2' is not implemented"
+    }
+  ]
+}

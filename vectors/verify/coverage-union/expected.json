@@ -1,0 +1,5 @@
+{
+  "outcome": "covered",
+  "reason": "the two certificates' targets union to the required set on the required platform",
+  "missing": []
+}

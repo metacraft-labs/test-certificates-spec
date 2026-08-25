@@ -1,7 +1,8 @@
 # Conformance Vectors
 
-> **Status:** ☐ Planned. Specified here; the vectors themselves are not yet
-> in this repository.
+> **Status:** ☑ Present. This document specifies the suite; the suite itself
+> lives in [`vectors/`](./vectors/README.md), whose README is the directory
+> contract a consumer in any language walks it by.
 
 ## Why this exists
 
@@ -30,6 +31,9 @@ canonical payload must serialize to.
 vectors/payload/<name>/
   fields.json      # the field values, as data
   canonical.txt    # the exact expected bytes, LF, trailing newline
+  pins.md          # the rule this case exists to pin, with citations
+  received.toml    # OPTIONAL: a non-canonical rendering of the same values,
+                   # which MUST parse to canonical.txt (Canonical-Payload §5)
 ```
 
 An implementation passes by serializing `fields.json` and comparing bytes.
@@ -55,13 +59,19 @@ Required coverage — every one of these is a place the prose can be misread:
 | `dirty-patch-only` | `worktree` present with `patch_digest` only |
 | `clean-no-worktree` | `worktree` absent, and must be |
 
+The suite additionally carries `dirty-tree-and-patch`, which shows all three
+`worktree` keys in their fixed order — the fourth worktree shape, which none of
+the three rows above reaches.
+
 ### 2. Signature vectors
 
 ```
 vectors/signature/<name>/
   canonical.txt    # payload bytes
   key.pub          # the public key
-  signature.b64    # the expected detached signature
+  signature.b64    # the expected detached signature, base64, one line
+  expect.txt       # `verify` or `fail`
+  pins.md
 ```
 
 An implementation passes by **verifying** each. It is not required to reproduce
@@ -71,20 +81,35 @@ legitimately vary — so the normative direction is verification.
 
 Must include at least one vector that MUST **fail**: a signature made under a
 different namespace, proving the implementation actually applies domain
-separation rather than ignoring it.
+separation rather than ignoring it. Such a vector has to fail for the *right
+reason* — the namespace, not the bytes — so the signature it carries is a
+genuine one, over exactly the payload in `canonical.txt`, by exactly the key in
+`key.pub`.
+
+The signing keys are published in `vectors/signature/keys/` so that anyone can
+re-derive the group and confirm it was not fabricated. They are worthless as
+keys and MUST NOT be registered anywhere.
 
 ### 3. Verification-decision vectors
 
-Each vector is a state, a set of certificates and a key store, with the expected
-outcome.
+Each vector is a state, a requirement, a set of certificates and a key store,
+with the expected outcome.
 
 ```
 vectors/verify/<name>/
-  state.json           # commit, platform, tree id under evaluation
+  state.json           # repo, commit and tree id under evaluation
+  requirement.json     # framework(s), targets, platforms, signature policy, scope
   certificates/*.toml
   registered-keys.toml
   expected.json        # {"outcome": "covered" | "not-covered" | "unverifiable", …}
+  pins.md
 ```
+
+The state and the requirement are separate files because they are different
+kinds of thing. A commit is not "on" a platform: platforms, targets, the
+required scope and whether signatures are demanded are all the *consumer's*
+choices, and a different consumer evaluating the same tree may reach a different
+and equally correct verdict.
 
 Required coverage:
 
@@ -105,10 +130,25 @@ Required coverage:
 That last one is the reason the outcome is three-valued, and it is the case an
 implementation is most likely to collapse.
 
+The suite additionally carries two cases that arrived with prose clarifications,
+per "Maintaining the vectors" below: `unknown-schema` (unverifiable — an
+unimplemented schema version) and `unverifiable-but-covered` (covered — a record
+that could not be read, next to a requirement already met without it).
+
 ## Using the suite
 
 The vectors are plain data with no runner, so any language can consume them.
 Each implementation writes a thin test that walks the directories and asserts.
+[`vectors/README.md`](./vectors/README.md) is the directory contract: file
+names, field shapes, and what each expected value means.
+
+There is deliberately **no harness here for implementations to invoke**. The
+`tools/` directory holds a reference serializer, a reference verifier and a
+signature regenerator, used to check that the vectors themselves are correct
+and to re-derive the signatures. None of it is normative, and no implementation
+is required to read, port or run any of it. `tools/walk-vectors.sh` walks all
+three groups with nothing but POSIX shell, `jq` and `ssh-keygen`, which is the
+demonstration that consuming this suite needs no code from this repository.
 
 An implementation claiming conformance MUST run all three groups. Partial
 conformance is not a status the standard recognises: an implementation that

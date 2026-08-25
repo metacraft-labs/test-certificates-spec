@@ -1,0 +1,19 @@
+{
+  "outcome": "not-covered",
+  "reason": "the other-framework certificate is ignored, so nothing covers t-integration",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration"
+      ]
+    }
+  ],
+  "ignored": [
+    {
+      "certificate": "b-other-framework.toml",
+      "why": "framework 'other-framework' is not implemented by this consumer"
+    }
+  ]
+}

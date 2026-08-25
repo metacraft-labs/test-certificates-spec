@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "worktree.tree names different content from the state under evaluation",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "dirty.toml",
+      "why": "worktree.tree does not equal the tree under evaluation"
+    }
+  ]
+}

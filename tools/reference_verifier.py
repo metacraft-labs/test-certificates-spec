@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""Reference three-valued verifier.
+
+NON-NORMATIVE. See tools/README.md.
+
+    Authoring tooling used to check that `vectors/verify/*` is self-consistent
+    and that its expected outcomes are the ones Verification.md requires. No
+    implementation is required to read, port or invoke it. Where this file and
+    Verification.md disagree, the document wins and this file is a bug.
+
+It implements the generic half of Verification.md — framework filtering,
+authenticity, the VCS/platform/scope check, and coverage as a union — and
+nothing framework-specific, because §4.2 says there is nothing generic to
+implement there.
+
+Usage:
+    python3 tools/reference_verifier.py vectors/verify/coverage-union
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tomllib
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import reference_serializer as rs  # noqa: E402
+import ssh_sig  # noqa: E402
+
+COVERED = "covered"
+NOT_COVERED = "not-covered"
+UNVERIFIABLE = "unverifiable"
+
+
+class Report:
+    """A verdict plus the detail Verification.md §5 requires it to carry."""
+
+    def __init__(self) -> None:
+        self.ignored: list[dict] = []      # other frameworks (§2)
+        self.rejected: list[dict] = []     # evaluated, and not evidence (§4)
+        self.unevaluated: list[dict] = []  # evaluation broke down (§7)
+        self.store_unreadable: str | None = None
+        self.missing: list[dict] = []
+        self.outcome = NOT_COVERED
+
+    def as_dict(self) -> dict:
+        out = {"outcome": self.outcome, "missing": self.missing}
+        if self.ignored:
+            out["ignored"] = self.ignored
+        if self.rejected:
+            out["rejected"] = self.rejected
+        if self.unevaluated:
+            out["unevaluated"] = self.unevaluated
+        return out
+
+
+def load_store(path: str) -> tuple[dict | None, str | None]:
+    """Parse a registered-key store.
+
+    Returns (keys_by_id, unreadable_reason). Verification.md draws the line
+    this function encodes:
+
+    * a store that is **missing or empty** is fail-closed — it answers the
+      question with "nobody is trusted" (§3.1), which is decidable;
+    * a store that cannot be **read or parsed** answers nothing, and makes the
+      outcome unverifiable (§7).
+    """
+    if not os.path.exists(path):
+        return {}, None  # missing store: fail-closed, not unreadable
+    try:
+        with open(path, "rb") as f:
+            doc = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return None, f"{os.path.basename(path)} could not be read: {exc}"
+    if doc.get("schema") != "registered-keys.v1":
+        return None, f"unknown key-store schema {doc.get('schema')!r}"
+    keys = {}
+    for entry in doc.get("key", []):
+        keys[entry["key_id"]] = entry
+    return keys, None
+
+
+def within_scope(required_paths: list[str] | None,
+                 cert_paths: list[str] | None) -> bool:
+    """Does a certificate's scope cover what the consumer requires? (§4.1.2)
+
+    A certificate with no `paths` covers the whole repository and therefore
+    covers anything. A scoped certificate covers a required path only when that
+    path lies inside one of its scope entries — a scope entry naming a
+    directory covers the subtree beneath it (Standard.md §3.2.1).
+    """
+    if not cert_paths:
+        return True
+    if required_paths is None:
+        return False  # whole repository required, scoped certificate offered
+    return all(any(r == c or r.startswith(c + "/") for c in cert_paths)
+               for r in required_paths)
+
+
+def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
+             keys: dict | None, store_unreadable: str | None,
+             report: Report) -> dict | None:
+    """Evaluate one candidate certificate.
+
+    Returns the certificate's contribution ({platform, targets}) when it is
+    evidence, and None when it is not. Anything that could not be judged is
+    recorded on `report.unevaluated` rather than rejected.
+    """
+    name = os.path.basename(cert_path)
+
+    def reject(why: str) -> None:
+        report.rejected.append({"certificate": name, "why": why})
+
+    def unevaluated(why: str) -> None:
+        report.unevaluated.append({"certificate": name, "why": why})
+
+    # An unimplemented schema version is an evaluation breakdown, not a
+    # verdict: the record may be perfectly good in a dialect we do not speak.
+    if doc.get("schema") != rs.SCHEMA:
+        unevaluated(f"schema {doc.get('schema')!r} is not implemented")
+        return None
+
+    cert = doc.get("certificate", {})
+    vcs = cert.get("vcs", {})
+
+    # Missing required fields, by contrast, are decidably invalid under v1.
+    try:
+        payload = rs.serialize(rs.fields_from_document(doc))
+    except rs.NotCanonical as exc:
+        reject(f"malformed: {exc}")
+        return None
+
+    if cert.get("result") != "passed":
+        reject(f"result is {cert.get('result')!r}, not 'passed'")
+        return None
+    if vcs.get("repo") != state["repo"]:
+        reject(f"vcs.repo {vcs.get('repo')!r} is a different repository")
+        return None
+
+    # --- VCS binding (§4.1, §4.1.1) --------------------------------------
+    if vcs.get("clean"):
+        if vcs.get("commit") != state["commit"]:
+            reject("vcs.commit does not equal the commit under evaluation")
+            return None
+    else:
+        worktree = vcs.get("worktree") or {}
+        if "tree" in worktree:
+            # Content comparison, so it holds across commit metadata: the
+            # certificate's own `commit` is only the base it was taken from.
+            if worktree["tree"] != state.get("tree"):
+                reject("worktree.tree does not equal the tree under evaluation")
+                return None
+        else:
+            # patch_digest only. A consumer that cannot reproduce the patch
+            # under the certificate's `format` MUST report the certificate
+            # unverifiable, not invalid (§4.1.1). This reference consumer
+            # reproduces no patch formats at all.
+            unevaluated(
+                f"patch_digest claim in format {worktree.get('format')!r} "
+                f"cannot be reproduced by this consumer")
+            return None
+
+    if not within_scope(requirement.get("paths"), vcs.get("paths")):
+        reject(f"vcs.paths scopes the claim to {vcs.get('paths')!r}, narrower "
+               f"than what is required")
+        return None
+
+    # --- Authenticity (§3) -----------------------------------------------
+    if requirement.get("require_signature"):
+        sig = doc.get("certificate", {}).get("signature") or {}
+        key_id = cert.get("key_id")
+        # Canonical-Payload.md §6: an absent block and an empty block both
+        # mean unsigned, and are treated identically.
+        if not key_id or not sig.get("value") or not sig.get("algorithm"):
+            reject("unsigned, and this consumer requires signatures")
+            return None
+        if store_unreadable is not None:
+            unevaluated(f"authenticity undecidable: {store_unreadable}")
+            return None
+        entry = (keys or {}).get(key_id)
+        if entry is None:
+            reject(f"key_id {key_id!r} resolves to no registered key")
+            return None
+        if entry.get("status") != "active":
+            reject(f"key_id {key_id!r} has status {entry.get('status')!r}")
+            return None
+        if sig.get("algorithm") != "ed25519":
+            reject(f"algorithm {sig.get('algorithm')!r} is not ed25519")
+            return None
+        ok, detail = ssh_sig.verify(payload, entry["public_key"], sig["value"])
+        if not ok:
+            reject(f"signature does not verify: {detail}")
+            return None
+
+    return {"platform": cert.get("platform"),
+            "targets": sorted(set(cert.get("targets", [])))}
+
+
+def decide(case_dir: str) -> dict:
+    """Run the Verification.md algorithm over one vector directory."""
+    with open(os.path.join(case_dir, "state.json"), encoding="utf-8") as f:
+        state = json.load(f)
+    with open(os.path.join(case_dir, "requirement.json"),
+              encoding="utf-8") as f:
+        requirement = json.load(f)
+    keys, store_unreadable = load_store(
+        os.path.join(case_dir, "registered-keys.toml"))
+
+    report = Report()
+    contributions: list[dict] = []
+    cert_dir = os.path.join(case_dir, "certificates")
+    for fname in sorted(os.listdir(cert_dir)):
+        if not fname.endswith(".toml"):
+            continue
+        path = os.path.join(cert_dir, fname)
+        with open(path, "rb") as f:
+            doc = tomllib.load(f)
+        framework = doc.get("certificate", {}).get("framework")
+        # §2: framework filtering comes first, before any other check.
+        if framework not in requirement["frameworks_implemented"]:
+            report.ignored.append(
+                {"certificate": fname,
+                 "why": f"framework {framework!r} is not implemented by this "
+                        f"consumer"})
+            continue
+        if framework != requirement["framework"]:
+            report.ignored.append(
+                {"certificate": fname,
+                 "why": f"framework {framework!r} is not the one this "
+                        f"requirement is about"})
+            continue
+        contribution = evaluate(path, doc, state, requirement, keys,
+                                store_unreadable, report)
+        if contribution is not None:
+            contributions.append(contribution)
+
+    # --- Coverage as a union, per platform (§5) --------------------------
+    for platform in requirement["platforms"]:
+        union: set[str] = set()
+        for c in contributions:
+            if c["platform"] == platform:
+                union.update(c["targets"])
+        gap = [t for t in requirement["targets"] if t not in union]
+        if gap:
+            report.missing.append({"framework": requirement["framework"],
+                                   "platform": platform,
+                                   "targets": gap})
+
+    # --- Precedence (§7) --------------------------------------------------
+    # Covered wins when the requirement is met by certificates that were fully
+    # evaluated: something we could not read could only have added coverage,
+    # and telling an operator to fix their configuration in order to reach a
+    # conclusion already reached is the unhelpfulness the third value exists to
+    # avoid. Otherwise an evaluation breakdown outranks not-covered, because
+    # "run the tests" would be the wrong instruction.
+    if not report.missing:
+        report.outcome = COVERED
+    elif report.unevaluated:
+        report.outcome = UNVERIFIABLE
+        report.missing = []
+    else:
+        report.outcome = NOT_COVERED
+    return report.as_dict()
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+    print(json.dumps(decide(argv[1]), indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

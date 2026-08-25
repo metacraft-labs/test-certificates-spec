@@ -65,6 +65,11 @@ Rules:
   the old once nothing depends on it.
 - **An empty or missing store is fail-closed.** No registered signers means every
   signed certificate is rejected. It MUST NOT be read as "no restrictions".
+- **An unreadable store is a different failure.** Empty and missing stores
+  *answer* the question — nobody is trusted — so the certificates they deny are
+  **not covered** (§7). A store that cannot be read or parsed answers nothing,
+  and the outcome is **unverifiable**. Collapsing the two sends an operator to
+  re-run tests when the actual fault is a corrupt configuration file.
 
 ### 3.2 What authenticity does not tell you
 
@@ -223,3 +228,24 @@ still *reports* it distinctly.
 Note that "no certificates from a framework I implement" is **not**
 unverifiable — it is simply not covered. Unverifiable is reserved for cases
 where evaluation itself broke down.
+
+Nor is a record that is decidably invalid. A `clean = false` certificate with no
+`worktree`, a missing required field, a revoked key, a scope narrower than the
+requirement: in each of those the consumer asked the question and got an answer.
+Unverifiable is for the cases where it could not ask — an unreadable key store, a
+schema version it does not implement, a `patch_digest` in a `format` it cannot
+reproduce.
+
+### 7.1 Precedence
+
+A single evaluation can produce several of these at once, so the order is fixed:
+
+1. **Covered** wins when every requirement is met by certificates that were
+   evaluated end to end. Something the consumer could not read could only ever
+   have *added* coverage, so reporting unverifiable here would send an operator
+   to fix a configuration problem in order to reach a conclusion already
+   reached. The unevaluated records MUST still be named in the report.
+2. Otherwise **unverifiable**, if anything that could have changed the answer
+   could not be evaluated. "Run the tests" would be the wrong instruction while
+   an unread certificate might already cover the gap.
+3. Otherwise **not covered**, naming the gaps (§5).

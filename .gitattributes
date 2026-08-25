@@ -1,0 +1,6 @@
+# The conformance vectors are byte-exact: a canonical payload is LF-only and a
+# signature covers the exact bytes on disk. Never let git rewrite line endings,
+# normalize whitespace, or apply a text filter to anything under vectors/, on
+# any platform. A single CRLF introduced by a checkout invalidates every
+# signature in the suite.
+vectors/** -text

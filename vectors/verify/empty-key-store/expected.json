@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "fail-closed: a store with no registered signers rejects every signed certificate",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "signed.toml",
+      "why": "key_id 'example-key-2026-q2' resolves to no registered key"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "outcome": "not-covered",
+  "reason": "a green linux/amd64 run is no evidence about macos/arm64",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "macos/arm64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ]
+}
