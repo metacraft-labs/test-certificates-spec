@@ -20,8 +20,11 @@
 # Content-Id.md §4.1 recipe, verbatim) and derives manifest-v1 with printf and
 # sha256sum.
 #
+# Store paths (Transport.md §2.2) are derived with sed, shell parameter
+# expansion and sha256sum, against expected-path.txt files written by hand.
+#
 # Usage:
-#   sh tools/walk-vectors.sh                    # all four groups
+#   sh tools/walk-vectors.sh                    # all five groups
 #   sh tools/walk-vectors.sh payload signature  # selected groups
 #
 # Exit status is 0 when every case behaved as its vector says.
@@ -502,13 +505,107 @@ walk_verify() {
 }
 
 # ---------------------------------------------------------------------------
-groups=${*:-"payload signature content verify"}
+# Group 5: store paths
+#
+# Transport.md §2.2 with sed and sha256sum: the content id split at its FIRST
+# `:` by shell parameter expansion, and the name the SHA-256 of the canonical
+# payload. This walker has no TOML parser, so it takes the payload from the
+# case's canonical.txt and then ties canonical.txt to certificate.toml in the
+# two ways open to it: a certificate in canonical form must be canonical.txt
+# plus at most a signature block, and a signed one must carry a signature that
+# ssh-keygen verifies over canonical.txt. A walker with a TOML parser rebuilds
+# the payload from certificate.toml itself (Canonical-Payload.md §5), as
+# tools/check.py does.
+# ---------------------------------------------------------------------------
+# A string value from a certificate in any rendering this suite uses: basic or
+# literal quotes, any spacing around `=`, LF or CRLF.
+tany() {
+  tr -d '\r' < "$1" \
+    | sed -n "s/^[[:space:]]*\"\{0,1\}$2\"\{0,1\}[[:space:]]*=[[:space:]]*[\"']\([^\"']*\)[\"'][[:space:]]*\$/\1/p" \
+    | head -1
+}
+
+store_pub() { # <key_id> -> the published public key file, or nothing
+  case "$1" in
+    example-key-2026-q2) printf '%s\n' "$vectors/signature/keys/insecure-test-key.pub";;
+  esac
+}
+
+walk_store() {
+  printf 'store: derive each path with sed and sha256sum, compare\n'
+  for d in "$vectors"/store/*/; do
+    d=${d%/}
+    name=$(basename "$d")
+
+    # expected-path.txt is exactly one LF-terminated line.
+    if [ "$(wc -l < "$d/expected-path.txt")" -eq 1 ] \
+       && [ "$(tail -c 1 "$d/expected-path.txt" | od -An -c | tr -d ' ')" = '\n' ]; then
+      want=$(cat "$d/expected-path.txt")
+    else
+      bad "store/$name: expected-path.txt is not one LF-terminated line"
+      continue
+    fi
+
+    cid=$(tval "$d/canonical.txt" content)
+    alg=${cid%%:*}                             # up to the FIRST ':'
+    dig=${cid#*:}
+    hash=$(sha256sum < "$d/canonical.txt" | cut -d' ' -f1)
+    got="v1/$alg/$dig/$hash.toml"
+    if [ "$got" = "$want" ]; then
+      ok "store/$name -> $want"
+    else
+      bad "store/$name: path differs" "got $got"
+    fi
+
+    # The trap: the file's own hash is never the name, unless the file IS the
+    # payload (an unsigned certificate in canonical form, with no block).
+    filehash=$(sha256sum < "$d/certificate.toml" | cut -d' ' -f1)
+    if cmp -s "$d/certificate.toml" "$d/canonical.txt" \
+       || [ "$filehash" != "$hash" ]; then
+      ok "store/$name: the name is the payload's hash, not the file's"
+    else
+      bad "store/$name: the file hashes to the name but is not the payload"
+    fi
+
+    # Tie canonical.txt to certificate.toml.
+    tied=0
+    cert_payload "$d/certificate.toml" > "$tmp/store-payload"
+    if cmp -s "$tmp/store-payload" "$d/canonical.txt"; then
+      ok "store/$name: canonical form, payload is the file minus its signature block"
+      tied=1
+    fi
+    sig=$(tany "$d/certificate.toml" value)
+    if [ -n "$sig" ]; then
+      key_id=$(tany "$d/certificate.toml" key_id)
+      pub=$(store_pub "$key_id")
+      if [ -z "$pub" ]; then
+        bad "store/$name: no published key for key_id '$key_id'"
+      elif printf '%s\n' "$sig" > "$tmp/store-sig" \
+           && ssh_verify "$d/canonical.txt" "$pub" "$tmp/store-sig" \
+                         "$namespace" > "$tmp/store-out" 2>&1; then
+        ok "store/$name: its signature verifies over canonical.txt"
+        tied=1
+      else
+        bad "store/$name: its signature does not verify over canonical.txt" \
+            "$(head -1 "$tmp/store-out")"
+      fi
+    fi
+    if [ "$tied" = 0 ]; then
+      printf '  note  store/%s: non-canonical and unsigned; canonical.txt is\n' "$name"
+      printf '          its payload only on tools/check.py'"'"'s TOML reconstruction\n'
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+groups=${*:-"payload signature content verify store"}
 for g in $groups; do
   case "$g" in
     payload)   walk_payload;;
     signature) walk_signature;;
     content)   walk_content;;
     verify)    walk_verify;;
+    store)     walk_store;;
     *) printf 'unknown group: %s\n' "$g" >&2; exit 2;;
   esac
   printf '\n'

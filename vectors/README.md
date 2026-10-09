@@ -37,6 +37,11 @@ vectors/
     registered-keys.toml      the key store
     expected.json             the expected outcome
     pins.md
+  store/<case>/             store paths (Transport.md §2.2)
+    certificate.toml          a certificate as a producer would write it
+    expected-path.txt         where it is stored, relative to the store root
+    canonical.txt             the payload whose hash names it (diagnostic)
+    pins.md
 ```
 
 Rules for a walker:
@@ -329,12 +334,60 @@ modes do not survive git — only the executable bit is recorded — and a
 permission-denied file cannot be shipped as data. What the consumer must do is
 identical either way.
 
+## Group 5: `store/`
+
+An implementation passes by deriving, from `certificate.toml`, the path at
+which [Transport.md §2.2](../Transport.md#22-layout) stores it, and comparing
+the string with `expected-path.txt`:
+
+```
+v1/<algorithm>/<digest>/<payload-hash>.toml
+```
+
+| File | Meaning |
+| ---- | ------- |
+| `certificate.toml` | The certificate, as a producer would deliver it to the store — signature block included when it has one. Some are deliberately **not** in canonical form: CRLF, tables in another order, the signature block first, literal strings, `\uXXXX` escapes, inline tables. |
+| `expected-path.txt` | One line, terminated by a single LF that is not part of the path. Relative to the store root; components separated by `/` on every platform, so a walker on Windows converts before comparing with a path it built natively. |
+| `canonical.txt` | The canonical payload of `certificate.toml`, byte for byte — a copy of the hand-derived `payload/` vector its `pins.md` names. **Not an input**: it shows where a mismatch starts, and lets a walker with no TOML parser check the hashing half. |
+
+What a walker does, per case:
+
+1. Parse `certificate.toml` and rebuild the canonical payload from the parsed
+   fields, exactly as a verifier does
+   ([Canonical-Payload.md §5](../Canonical-Payload.md#5-verifying-against-the-payload)).
+   The signature block is not part of it, wherever it appears in the file.
+2. `<payload-hash>` is the lowercase hex SHA-256 of those bytes — never of the
+   file. `sha256sum certificate.toml` is wrong for every signed case, and for
+   every non-canonical one.
+3. Split `vcs.content` at its **first** `:`
+   ([Content-Id.md §1](../Content-Id.md#1-form)): `<algorithm>`, then `<digest>`.
+4. Join `v1`, `<algorithm>`, `<digest>` and `<payload-hash>.toml` with `/`.
+
+The cases come in groups that share a name, which is the point of them:
+
+| Name | Cases | Why they agree |
+| ---- | ----- | -------------- |
+| `…/2bdea115….toml` | `unsigned`, `unsigned-empty-block` | An absent and an empty signature block are the same unsigned payload (Canonical-Payload.md §6). |
+| `…/de22c2c4….toml` | `signed`, `signed-non-canonical`, `signed-non-canonical-no-block` | Three different files, one payload: the rendering is not hashed, and neither is the signature block. `key_id` *is* in the payload, so stripping the block does not make the certificate `unsigned`'s twin. |
+
+`signed` and `unsigned` share a content directory and differ in name: the same
+claim, signed and not, is two payloads. A store that keeps both has two files,
+and neither replaces the other.
+
+The signatures in `signed` and `signed-non-canonical` are real: made over
+`canonical.txt` with the published key `signature/keys/insecure-test-key`
+(`key_id` `example-key-2026-q2`) and re-derivable with
+`python3 tools/regenerate.py`. A walker need not verify them to pass this
+group; they are there so that a non-canonical file is provably the certificate
+it claims to be.
+
 ## Ambiguities this suite closed
 
 Per Conformance.md, a vector is added whenever an ambiguity is found in the
 prose, **in the same change that clarifies the prose**. Authoring this suite
-found these, and the listed documents were changed. The last three were found
-while moving the suite to the 2026-10-09 content binding:
+found these, and the listed documents were changed. Three were found while
+moving the suite to the 2026-10-09 content binding, and the two about the
+signature block and the store while adding the `store/` group:
 
 | Ambiguity | Resolution | Vector |
 | --------- | ---------- | ------ |
@@ -352,13 +405,15 @@ while moving the suite to the 2026-10-09 content binding:
 | Where does the *requirement* live in a verification vector? Conformance.md §3 put `platform` in `state.json` and named no home for targets or signature policy. | A separate `requirement.json` — Conformance.md §4 (then §3) | every `verify/` vector |
 | Where does a content id's algorithm end? Content-Id.md §1 defined the form `<algorithm>:<digest>` without saying which `:` separates them, and `git-tree-sha1:sha1:…` is malformed under one reading and an uncomputable algorithm (unverifiable) under the other. | At the **first** `:` — Content-Id.md §1 | `verify/content-malformed` (`d-second-colon.toml`) |
 | Is a content id naming an algorithm the standard does not define malformed or unverifiable? Content-Id.md §1 listed "an unknown algorithm" among the malformed forms, while Verification.md §4.1.1 listed only the form errors as malformed and called an algorithm the consumer cannot compute unverifiable; and "a digest of the wrong length" cannot be judged for an algorithm that defines no length. | Unverifiable: well-formed, uncomputable, length not judged; producers still MUST NOT emit one — Content-Id.md §1, Verification.md §4.1.1 | `verify/content-unknown-algorithm` (`b-unknown-algorithm.toml`) |
+| Conformance.md §5 asked for "the same certificate with and without its signature block in non-canonical form" next to "a signed and an unsigned certificate", which reads either as the signed/unsigned twins again or as a signed certificate whose block was removed — and the two land on different names. | A signed certificate with its block removed keeps `key_id`, so keeps its payload and its name; Conformance.md §5 now lists the with-block and without-block renderings as separate cases | `store/signed-non-canonical`, `store/signed-non-canonical-no-block` |
+| Transport.md §2.3 let a producer keep an existing file under the final name because "for a signed one either signature verifies over the same payload" — but the name is the payload's hash and the signature block is outside the payload, so a signed certificate and the same record without its block share a name, and keeping the existing file could discard the signature. §2.4 likewise evaluated a name found in both roots "once" without saying which copy. | A signed copy replaces an unsigned one under the same name; a reader evaluates every copy of a name that is not byte-identical to one already evaluated, so no copy hides another — Transport.md §2.3, §2.4 | `store/signed-non-canonical-no-block` |
 | Is `manifest-v1`'s path order "not git's tree order"? Content-Id.md §4.2 said so, but git's recursive tree order — which sorts a directory as if its name ended in `/` — *is* full-path byte order: `git ls-tree -r` lists `a.b`, `a/b`, `a0`, exactly as `manifest-v1` does. The order that differs is a walk sorting each directory's names on their own, which emits `a/b` first. | Byte order of the full path, which coincides with git's listing order and differs from a per-directory walk — Content-Id.md §4.2, Conformance.md §3 | `content/byte-order` |
 
 ## Cases beyond the required set
 
-Conformance.md requires 16 payload cases, 7 content-id cases and 13
-verification cases, and itself lists the four verification cases below that
-arrived with prose clarifications. Each is marked as such in its `pins.md`:
+Conformance.md requires 16 payload cases, 7 content-id cases, 13
+verification cases and 6 store-path cases, and itself lists the cases below
+that go beyond them. Each is marked as such in its `pins.md`:
 
 | Case | Why |
 | ---- | --- |
@@ -366,6 +421,7 @@ arrived with prose clarifications. Each is marked as such in its `pins.md`:
 | `verify/unverifiable-but-covered` | Added with the Verification.md §7 precedence rule above. |
 | `verify/unknown-schema-off-platform` | Added with the Verification.md §7.1 relevance rule above. |
 | `verify/unreadable-store-off-platform` | Its mirror, and the reason the rule is not simply "assume everything unevaluable mattered". |
+| `store/unsigned-empty-block` | The store half of Canonical-Payload.md §6: the empty-block form of an unsigned certificate is the same payload, so the same name. |
 
 ## What this suite does not cover
 
@@ -394,8 +450,14 @@ Stated so that nobody mistakes a gap for a guarantee:
   them is tested.
 - **Framework-specific validity.** By construction: Verification.md §4.2 says
   there is nothing generic to test there.
-- **Transport.** Nothing in [Transport.md](../Transport.md) is covered; the
-  vectors start from certificates already in hand.
+- **Transport, beyond the store layout.** The `store/` group pins where
+  [Transport.md §2.2](../Transport.md#22-layout) puts a certificate. Root
+  resolution (§2.1) depends on the environment, and atomic writing, reading
+  both roots and pruning (§2.3–§2.5) on a live file system; git notes (§3) on a
+  live repository. None of them is a vector.
+- **Store paths for unusual content ids.** Every `store/` certificate carries a
+  well-formed id in an algorithm Content-Id.md §4 defines. A producer MUST NOT
+  emit any other (Content-Id.md §1), so there is no path to pin for one.
 
 ## The tools directory is not part of the suite
 
@@ -407,6 +469,6 @@ They exist so that the vectors themselves can be checked and re-derived.
 **No implementation is required to read, port or invoke any of them**, and
 nothing in `tools/` is normative. Where a tool and the prose disagree, the prose
 wins and the tool is a bug. `tools/walk-vectors.sh` is worth a look anyway: it
-walks all four groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git`
+walks all five groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git`
 and `sha256sum`, which is the concrete demonstration that this suite needs no
 language-specific tooling.

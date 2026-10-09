@@ -6,8 +6,10 @@
 # A conformance suite that passes whatever you feed it pins nothing. This
 # script takes a throwaway copy of the repository, damages one thing at a time,
 # and asserts that the checks go red — once for a canonical payload, once for a
-# signature, once for a signature inside a verification vector, and once for an
-# expected content id, so all four groups are shown to be load-bearing. Another
+# signature, once for a signature inside a verification vector, once for an
+# expected content id, and twice for the store group -- an expected path, and
+# the signature tying a non-canonical certificate to its payload -- so all five
+# groups are shown to be load-bearing. Another
 # flips a record's schema version to show that the §7.1 relevance distinction
 # is load-bearing too, which no amount of signature checking would catch.
 #
@@ -155,6 +157,38 @@ expect_red "reference content-id implementation disagrees" \
 expect_red "git, via the shell walker, disagrees" \
   sh "$work/tools/walk-vectors.sh" content
 cp "$work/content.orig" "$target"
+printf '\n'
+
+# --- 6. one hex digit of an expected store path ----------------------------
+# Still one line of the right shape, right length, lowercase: only re-hashing
+# the canonical payload can tell. The Python reference rebuilds the payload from
+# the parsed certificate; the shell walker hashes canonical.txt with sha256sum.
+printf '6. one hex digit changed in vectors/store/signed/expected-path.txt\n'
+target=$work/vectors/store/signed/expected-path.txt
+cp "$target" "$work/store-path.orig"
+corrupt "$target" 'de22c2c4a9d3' 'de22c2c5a9d3'
+expect_red "reference store-path derivation disagrees" \
+  python3 "$work/tools/check.py" store
+expect_red "sha256sum, via the shell walker, disagrees" \
+  sh "$work/tools/walk-vectors.sh" store
+cp "$work/store-path.orig" "$target"
+printf '\n'
+
+# --- 7. one byte of the signature in a non-canonical store certificate -----
+# The path is untouched and still right. What breaks is the evidence that the
+# non-canonical file really is store/signed's certificate: its signature, over
+# the payload rebuilt from it, no longer verifies. The character changed is
+# inside the 64-byte ed25519 signature itself, not the SSHSIG framing, so the
+# blob still parses and only the cryptographic check can fail.
+printf '7. one base64 character changed in vectors/store/signed-non-canonical/certificate.toml\n'
+target=$work/vectors/store/signed-non-canonical/certificate.toml
+cp "$target" "$work/store-cert.orig"
+corrupt "$target" 'AOfnEl93gg' 'AOfnEl94gg'
+expect_red "reference signature check over the rebuilt payload" \
+  python3 "$work/tools/check.py" store
+expect_red "ssh-keygen via the shell walker" \
+  sh "$work/tools/walk-vectors.sh" store
+cp "$work/store-cert.orig" "$target"
 printf '\n'
 
 printf '%d as expected, %d wrong\n' "$pass" "$fail"

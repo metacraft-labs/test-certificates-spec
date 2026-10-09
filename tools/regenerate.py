@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Re-derive every signature in the suite, and rebuild vectors/index.json.
 
+Signed certificates live in three places: signature/<case>/signature.b64,
+verify/<case>/certificates/*.toml and store/<case>/certificate.toml.
+
 NON-NORMATIVE authoring tooling. See tools/README.md.
 
 Signatures are the one part of the suite that cannot be authored by hand, so
@@ -22,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tomllib
 
@@ -179,6 +183,64 @@ def resign_certificates(w: Writer) -> None:
             w.write(path, certificate_text(payload, "ed25519", b64))
 
 
+_SIG_HEADER = re.compile(
+    rb"^[ \t]*\[[ \t]*certificate[ \t]*\.[ \t]*signature[ \t]*\][ \t]*\r?$",
+    re.MULTILINE)
+_SIG_VALUE = re.compile(
+    rb"^([ \t]*value[ \t]*=[ \t]*)(\"[^\"\r\n]*\"|'[^'\r\n]*')",
+    re.MULTILINE)
+
+
+def resign_store_certificates(w: Writer) -> None:
+    """Re-sign every store-vector certificate that carries a signature block.
+
+    Unlike the verify group, the bytes signed are the case's own hand-derived
+    `canonical.txt`, never a serializer's output, and the certificate file is
+    edited in place: only the string after `value =` in its
+    `[certificate.signature]` table changes, so a deliberately non-canonical
+    rendering (CRLF, reordered tables, literal strings) stays exactly as it was
+    authored. A block with an empty `algorithm` is the unsigned form
+    (Canonical-Payload.md §6) and is left alone.
+    """
+    root = os.path.join(VECTORS, "store")
+    for case in sorted(os.listdir(root)):
+        d = os.path.join(root, case)
+        path = os.path.join(d, "certificate.toml")
+        if not os.path.isfile(path):
+            continue
+        with open(path, "rb") as f:
+            text = f.read()
+        doc = tomllib.loads(text.decode("utf-8"))
+        cert = doc.get("certificate", {})
+        sig = cert.get("signature")
+        if not sig or not sig.get("algorithm"):
+            continue
+        key_id = cert.get("key_id")
+        if key_id not in KEY_FOR_ID:
+            raise SystemExit(f"{path}: no signing key for {key_id!r}")
+        if sig["algorithm"] != "ed25519":
+            raise SystemExit(f"{path}: cannot sign {sig['algorithm']!r}")
+        with open(os.path.join(d, "canonical.txt"), "rb") as f:
+            payload = f.read()
+        b64 = ssh_sig.sign(payload, KEY_FOR_ID[key_id])
+        assert ssh_sig.b64_is_canonical(b64)
+
+        headers = list(_SIG_HEADER.finditer(text))
+        assert len(headers) == 1, f"{path}: expected one signature header"
+        start = headers[0].end()
+        # The block ends at the next table header, or at the end of the file.
+        nxt = re.compile(rb"^[ \t]*\[", re.MULTILINE).search(text, start)
+        end = nxt.start() if nxt else len(text)
+        block = text[start:end]
+        values = list(_SIG_VALUE.finditer(block))
+        assert len(values) == 1, f"{path}: expected one signature value"
+        m = values[0]
+        quote = m.group(2)[:1]
+        new_block = (block[:m.start(2)] + quote + b64.encode("ascii") + quote
+                     + block[m.end(2):])
+        w.write(path, text[:start] + new_block + text[end:])
+
+
 def rebuild_index(w: Writer) -> None:
     """A directory listing with each case's one-line purpose.
 
@@ -190,7 +252,7 @@ def rebuild_index(w: Writer) -> None:
         "namespace": ssh_sig.NAMESPACE,
         "groups": {},
     }
-    for group in ("payload", "signature", "content", "verify"):
+    for group in ("payload", "signature", "content", "verify", "store"):
         cases = []
         for name in sorted(os.listdir(os.path.join(VECTORS, group))):
             d = os.path.join(VECTORS, group, name)
@@ -227,6 +289,7 @@ def main() -> int:
     w = Writer(args.check)
     regenerate_signature_vectors(w)
     resign_certificates(w)
+    resign_store_certificates(w)
     rebuild_index(w)
 
     if not w.changed:

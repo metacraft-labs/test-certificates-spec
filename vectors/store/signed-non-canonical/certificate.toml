@@ -1,0 +1,31 @@
+# store/signed's certificate, rendered NON-canonically, signature block and all.
+# Its canonical payload is exactly canonical.txt, so it is stored under exactly
+# store/signed's name (Transport.md 2.2: the payload is hashed, not the file).
+schema	=	'test-certificate.v1'
+
+[certificate.signature]
+value     = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBdxux8YXnHQGiL3dII9i27FbBylnXLd3aA/GM59//57AfM4783AOfnEl93gg+jrYWXirSKG6SXZAt8Hu+YrsAL"
+algorithm = 'ed25519'
+
+[[certificate.command]]
+argv = [
+  'example-test',
+  "run",
+  "--targets",
+  "t-integration,t-unit",
+]
+
+[certificate]
+key_id    = "example-key-2026-q2"
+targets   = [ "t-unit", "t-integration" ]
+issuer    = "example-runner\u0040build-host-1"
+issued_at = "2026-06-23T10:14:33Z"
+result    = 'passed'
+platform  = "linux\u002Famd64"
+project   = "example"
+framework = """example-framework"""
+
+[certificate.vcs]
+untracked = false
+content   = 'git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766'
+repo      = "example"

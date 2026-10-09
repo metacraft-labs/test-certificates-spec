@@ -20,7 +20,7 @@ the thing this repository exists to replace.
 | `ssh_sig.py` | Thin wrapper over `ssh-keygen -Y sign` / `-Y verify`, and the armor ⇄ base64 conversion. |
 | `regenerate.py` | Re-derives every signature and rebuilds `vectors/index.json`. Idempotent; `--check` fails if anything would change. |
 | `check.py` | Runs the reference tools over the whole suite. |
-| `walk-vectors.sh` | Walks all four groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
+| `walk-vectors.sh` | Walks all five groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
 | `corruption-demo.sh` | Damages one byte at a time and asserts the checks go red. |
 
 ## Running them
@@ -61,6 +61,19 @@ Python and once with `printf` and `sha256sum`, and agreed.
 objects by hand, and `walk-vectors.sh` re-derives them with git and
 `sha256sum`. Nothing generates `expected.json` from the code that checks it.
 
+The store paths in `vectors/store/*/expected-path.txt` were written from each
+case's `canonical.txt` — a copy of a hand-derived `payload/` vector — with
+`sha256sum` and the content id split at its first `:` by hand, before any tool
+read them. `check.py` then rebuilds each payload from the parsed
+`certificate.toml`, however non-canonical, and hashes it in Python;
+`walk-vectors.sh` hashes `canonical.txt` with `sha256sum` and ties it to the
+certificate by byte comparison or by verifying its signature with `ssh-keygen`
+— except for `store/signed-non-canonical-no-block`, which is neither canonical
+nor signed, and which it reports as resting on `check.py`'s TOML
+reconstruction rather than counting as checked.
+
 Signatures are the exception. They cannot be authored by hand, so
-`regenerate.py` produces them — deterministically, so re-running it over
-unchanged inputs is a no-op.
+`regenerate.py` produces them — over the hand-derived bytes wherever a case
+has them (`signature/` and `store/`), and editing only the signature `value` in
+a store certificate so its deliberately non-canonical rendering survives —
+deterministically, so re-running it over unchanged inputs is a no-op.

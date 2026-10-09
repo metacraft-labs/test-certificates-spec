@@ -193,6 +193,36 @@
         "name": "wrong-platform",
         "pins": "certificates for another platform contribute nothing."
       }
+    ],
+    "store": [
+      {
+        "name": "manifest-content",
+        "pins": "a `manifest-v1-sha256` content id is split like any other, giving a `manifest-v1-sha256` directory and a 64-digit digest directory."
+      },
+      {
+        "name": "scoped",
+        "pins": "a scoped certificate is stored under its own, **scoped** content id: the directory is the certificate's `content`, never the whole-repository id of the same tree."
+      },
+      {
+        "name": "signed",
+        "pins": "a signed certificate is named by the hash of its canonical payload, which includes `key_id` and excludes the signature block — so it is stored next to, not on top of, its unsigned twin."
+      },
+      {
+        "name": "signed-non-canonical",
+        "pins": "the name is the hash of the canonical payload reconstructed from the parsed fields, never of the file bytes — a non-canonical rendering of `store/signed`, signature block included, is stored under `store/signed`'s name."
+      },
+      {
+        "name": "signed-non-canonical-no-block",
+        "pins": "removing a signed certificate's signature block does not change its name — `key_id` is part of the payload and stays, the block never was — so the stripped copy and the signed one land on the same name."
+      },
+      {
+        "name": "unsigned",
+        "pins": "an unsigned certificate is stored at `v1/<algorithm>/<digest>/<payload-hash>.toml`, with the content id split at its first `:` and the name the SHA-256 of the canonical payload."
+      },
+      {
+        "name": "unsigned-empty-block",
+        "pins": "the empty-signature-block form of an unsigned certificate is stored under the same name as the form with no block at all."
+      }
     ]
   }
 }

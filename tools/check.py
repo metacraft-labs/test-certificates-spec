@@ -19,6 +19,9 @@ Groups:
                builds git objects by hand rather than asking git
     verify     every vector yields its expected three-valued outcome, and the
                gaps it names
+    store      every expected-path.txt is the Transport.md §2.2 path derived
+               from certificate.toml: the content id split at its first `:`,
+               and the SHA-256 of the payload rebuilt from the parsed fields
     index      vectors/index.json matches what is on disk
 """
 
@@ -27,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import tomllib
 import unicodedata
@@ -59,6 +63,30 @@ REQUIRED_VERIFY = [
     "content-differs", "content-malformed", "content-unknown-algorithm",
     "earlier-draft-record", "scope-too-narrow", "unreadable-store",
 ]
+REQUIRED_STORE = [
+    "unsigned", "signed", "signed-non-canonical",
+    "signed-non-canonical-no-block", "manifest-content", "scoped",
+]
+
+# Each store case's canonical.txt is a copy of a hand-derived payload vector,
+# named in its pins.md. Checked byte for byte so the two cannot drift apart.
+STORE_PAYLOAD_SOURCE = {
+    "unsigned": "minimal",
+    "unsigned-empty-block": "minimal",
+    "signed": "signed",
+    "signed-non-canonical": "signed",
+    "signed-non-canonical-no-block": "signed",
+    "manifest-content": "content-manifest",
+    "scoped": "scoped",
+}
+
+# key_id -> the published public key a store certificate is verified against.
+STORE_KEYS = {
+    "example-key-2026-q2": os.path.join(VECTORS, "signature", "keys",
+                                        "insecure-test-key.pub"),
+}
+
+GROUPS_ON_DISK = ("payload", "signature", "content", "verify", "store")
 
 
 class Results:
@@ -344,6 +372,142 @@ def check_verify(r: Results) -> None:
             f"{uninterpretable} / {interpretable}")
 
 
+def store_path(cert_path: str) -> tuple[str, bytes, dict]:
+    """Transport.md §2.2, from a certificate file however it was written.
+
+    The payload is rebuilt from the parsed fields (Canonical-Payload.md §5);
+    the file's own bytes are never hashed.
+    """
+    with open(cert_path, "rb") as f:
+        doc = tomllib.load(f)
+    payload = rs.serialize(rs.fields_from_document(doc))
+    algorithm, digest = cid.parse(doc["certificate"]["vcs"]["content"])
+    name = hashlib.sha256(payload).hexdigest()
+    return f"v1/{algorithm}/{digest}/{name}.toml", payload, doc
+
+
+def check_store(r: Results) -> None:
+    print("store: each certificate's Transport.md §2.2 path is derived "
+          "and compared")
+    present = cases("store")
+    missing = [c for c in REQUIRED_STORE if c not in present]
+    r.check(not missing, f"all {len(REQUIRED_STORE)} required cases present",
+            f"missing: {missing}")
+    paths: dict[str, str] = {}
+    files: dict[str, bytes] = {}
+    docs: dict[str, dict] = {}
+    for name in present:
+        d = os.path.join(VECTORS, "store", name)
+        with open(os.path.join(d, "expected-path.txt"), "rb") as f:
+            raw = f.read()
+        with open(os.path.join(d, "certificate.toml"), "rb") as f:
+            files[name] = f.read()
+        r.check(re.fullmatch(rb"v1/[a-z0-9-]+/[0-9a-f]+/[0-9a-f]{64}\.toml\n",
+                             raw) is not None,
+                f"store/{name} path file is one LF-terminated line "
+                f"of the §2.2 form", repr(raw))
+        want = raw.decode("utf-8").rstrip("\n")
+        paths[name] = want
+        try:
+            got, payload, doc = store_path(os.path.join(d, "certificate.toml"))
+        except (rs.NotCanonical, cid.Malformed, KeyError) as exc:
+            r.check(False, f"store/{name}", f"cannot derive a path: {exc}")
+            continue
+        docs[name] = doc
+        r.check(got == want, f"store/{name} -> {want}", f"got {got}")
+
+        # The diagnostic payload is the one the name was derived from, and is
+        # the hand-derived payload vector it says it copies.
+        with open(os.path.join(d, "canonical.txt"), "rb") as f:
+            canonical = f.read()
+        r.check(canonical == payload,
+                f"store/{name} canonical.txt is certificate.toml's payload")
+        source = STORE_PAYLOAD_SOURCE.get(name)
+        r.check(source is not None
+                and canonical == open(os.path.join(
+                    VECTORS, "payload", source, "canonical.txt"), "rb").read(),
+                f"store/{name} canonical.txt is payload/{source}'s bytes")
+
+        # A signed certificate carries a real signature over that payload, by
+        # the published key its key_id names.
+        sig = doc["certificate"].get("signature") or {}
+        if sig.get("algorithm") or sig.get("value"):
+            key_id = doc["certificate"].get("key_id")
+            pub_path = STORE_KEYS.get(key_id)
+            ok = pub_path is not None and sig.get("algorithm") == "ed25519"
+            detail = f"key_id {key_id!r}, algorithm {sig.get('algorithm')!r}"
+            if ok:
+                with open(pub_path, encoding="ascii") as f:
+                    pub = f.read().strip()
+                ok, detail = ssh_sig.verify(payload, pub, sig.get("value", ""))
+            r.check(ok, f"store/{name} signature verifies over the payload",
+                    detail)
+
+    if not all(n in docs for n in REQUIRED_STORE + ["unsigned-empty-block"]):
+        return
+    # The relationships the cases exist for, asserted directly, so that a
+    # case whose path is right but whose reason is gone fails here.
+    def content_dir(n: str) -> str:
+        return paths[n].rsplit("/", 1)[0]
+
+    r.check(paths["signed"] != paths["unsigned"]
+            and content_dir("signed") == content_dir("unsigned"),
+            "store/signed and store/unsigned: same content directory, "
+            "different names")
+    unsigned_c = docs["unsigned"]["certificate"]
+    signed_c = docs["signed"]["certificate"]
+    r.check({k: v for k, v in signed_c.items()
+             if k not in ("key_id", "signature")} == unsigned_c
+            and "key_id" in signed_c and "key_id" not in unsigned_c,
+            "store/signed and store/unsigned differ only by key_id and the "
+            "signature")
+
+    # The trap the signed cases set: hashing the file is a different name.
+    r.check(hashlib.sha256(files["signed"]).hexdigest()
+            not in paths["signed"],
+            "store/signed: the file's own hash is not the name")
+
+    for twin in ("signed-non-canonical", "signed-non-canonical-no-block"):
+        r.check(paths[twin] == paths["signed"]
+                and files[twin] != files["signed"],
+                f"store/{twin}: different bytes, store/signed's name")
+    def as_set(c: dict) -> dict:
+        # `targets` is a set (Canonical-Payload.md §3); the rendering may list
+        # it in any order.
+        return {**c, "targets": sorted(set(c["targets"]))}
+    r.check(as_set(docs["signed-non-canonical"]["certificate"])
+            == as_set(signed_c),
+            "store/signed-non-canonical parses to store/signed's values, "
+            "signature included")
+    nc = files["signed-non-canonical"]
+    r.check(b"\r\n" in nc and nc.find(b"[certificate.signature]")
+            < nc.find(b"[certificate]"),
+            "store/signed-non-canonical is CRLF with the signature block "
+            "before the payload tables")
+    no_block = docs["signed-non-canonical-no-block"]["certificate"]
+    r.check("signature" not in no_block
+            and no_block == {k: v for k, v in signed_c.items()
+                             if k != "signature"},
+            "store/signed-non-canonical-no-block is store/signed's values "
+            "without the block, key_id kept")
+
+    empty = docs["unsigned-empty-block"]["certificate"]
+    r.check(paths["unsigned-empty-block"] == paths["unsigned"]
+            and empty.get("signature") == {"algorithm": "", "value": ""}
+            and files["unsigned-empty-block"] != files["unsigned"],
+            "store/unsigned-empty-block: the empty block keeps "
+            "store/unsigned's name")
+
+    r.check(paths["manifest-content"].startswith("v1/manifest-v1-sha256/"),
+            "store/manifest-content is under manifest-v1-sha256/")
+    scoped_vcs = docs["scoped"]["certificate"]["vcs"]
+    r.check(bool(scoped_vcs.get("paths"))
+            and content_dir("scoped") != content_dir("unsigned")
+            and content_dir("scoped") == "v1/" + scoped_vcs["content"]
+            .replace(":", "/", 1),
+            "store/scoped is under its own scoped content id")
+
+
 def sorted_missing(report: dict) -> list:
     return sorted((m["framework"], m["platform"], tuple(sorted(m["targets"])))
                   for m in report.get("missing", []))
@@ -357,7 +521,7 @@ def check_index(r: Results) -> None:
     print("index: vectors/index.json matches the directories on disk")
     with open(os.path.join(VECTORS, "index.json"), encoding="utf-8") as f:
         index = json.load(f)
-    for group in ("payload", "signature", "content", "verify"):
+    for group in GROUPS_ON_DISK:
         listed = [c["name"] for c in index["groups"][group]]
         r.check(listed == cases(group), f"index lists every {group} case",
                 f"index {listed} vs disk {cases(group)}")
@@ -391,6 +555,13 @@ def check_structure(r: Results) -> None:
                               "pins.md"))
                 and os.path.isdir(os.path.join(d, "certificates")),
                 f"verify/{name} has the required files")
+    for name in cases("store"):
+        d = os.path.join(VECTORS, "store", name)
+        r.check(all(os.path.exists(os.path.join(d, f))
+                    for f in ("certificate.toml", "expected-path.txt",
+                              "canonical.txt", "pins.md")),
+                f"store/{name} has certificate.toml, expected-path.txt, "
+                f"canonical.txt, pins.md")
 
 
 GROUPS = {
@@ -398,6 +569,7 @@ GROUPS = {
     "signature": check_signature,
     "content": check_content,
     "verify": check_verify,
+    "store": check_store,
     "index": check_index,
     "structure": check_structure,
 }

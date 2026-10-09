@@ -157,8 +157,15 @@ Within whichever root, the write is atomic:
 Readers never see a partial file, and two producers publishing at once cannot
 corrupt each other: they either write different names, or the same bytes under
 the same name. When the final name already exists, a producer MAY keep the
-existing file; for an unsigned claim the two are identical, and for a signed
-one either signature verifies over the same payload.
+existing file — **unless the existing file carries no signature and the new
+one does**, in which case it MUST replace it. The name is the payload's hash,
+and the signature block is not part of the payload, so a signed certificate and
+the same certificate with its signature block removed or emptied share a name
+([Canonical-Payload §6](./Canonical-Payload.md#6-unsigned-certificates));
+keeping the unsigned copy would silently discard the signature. In every other
+case the two files are interchangeable: two unsigned copies are the same claim,
+and two signed copies carry signatures by the same key — `key_id` is part of
+the payload — over the same bytes.
 
 The two roots are not two levels of trust. A certificate found in the system
 root is evaluated exactly like one found in the user root (§1): what makes a
@@ -171,7 +178,12 @@ holds.
 
 A reader lists `<root>/v1/<algorithm>/<digest>/` **in both roots** and reads
 every file whose name ends in `.toml` and does not begin with `.`. A name found
-in both roots is the same payload and is evaluated once. Each file is one
+in both roots is the same payload, but the two files need not be the same
+certificate: one copy may be signed and the other not (§2.3). A reader may skip
+a copy byte-identical to one it has evaluated; otherwise it evaluates each, so
+that neither an unsigned copy nor one whose signature fails hides a copy that
+would have counted — coverage only grows
+([Verification §5](./Verification.md#5-coverage-is-a-union)). Each file is one
 candidate certificate, evaluated like any other ([Verification](./Verification.md)): the
 directory it was found in is a hint for discovery, not evidence, and a record
 whose own `content` does not match its directory is reported and ignored.

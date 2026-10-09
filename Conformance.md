@@ -175,8 +175,6 @@ in one direction or the other.
 
 ### 5. Store-path vectors
 
-> **Status:** Planned — specified here, not yet in `vectors/`.
-
 Each vector is a certificate and the path, relative to the store root, at which
 [Transport §2.2](./Transport.md#22-layout) places it.
 
@@ -184,15 +182,32 @@ Each vector is a certificate and the path, relative to the store root, at which
 vectors/store/<name>/
   certificate.toml   # the certificate as a producer would write it
   expected-path.txt  # v1/<algorithm>/<digest>/<payload-hash>.toml, one line
+  canonical.txt      # the canonical payload whose hash names it, for diagnosis
   pins.md
 ```
 
-An implementation passes by deriving the path and comparing strings. The cases
-must cover a signed and an unsigned certificate with otherwise equal fields
-(different payloads, so different names), the same certificate with and without
-its signature block in non-canonical form (the same name: the payload, not the
-file bytes, is hashed), a `manifest-v1-sha256` content id, and a scoped
-certificate (stored under its scoped content id).
+An implementation passes by deriving the path from `certificate.toml` —
+reconstructing the canonical payload from the parsed fields
+([Canonical-Payload §5](./Canonical-Payload.md#5-verifying-against-the-payload)),
+never hashing the file — and comparing strings. `expected-path.txt` holds one
+line terminated by a single LF, with `/` separating the components whatever
+the platform's own separator; the LF is not part of the path.
+`canonical.txt` is not an input: it is there to show where a mismatch begins,
+and for a walker with no TOML parser.
+
+Required coverage:
+
+| Vector | What it pins |
+| ------ | ------------ |
+| `unsigned` | The layout: the content id split at its first `:`, the name the SHA-256 of the canonical payload |
+| `signed` | The same fields plus `key_id` and a signature: a different payload, so a different name beside `unsigned`'s |
+| `signed-non-canonical` | `signed`'s certificate rendered non-canonically, signature block included: `signed`'s name, since the payload, not the file, is hashed |
+| `signed-non-canonical-no-block` | `signed`'s certificate with its signature block removed, non-canonically: still `signed`'s name, since `key_id` stays in the payload and the block never was |
+| `manifest-content` | A `manifest-v1-sha256` content id |
+| `scoped` | A scoped certificate, stored under its scoped content id |
+
+The suite additionally carries `unsigned-empty-block`: the empty-signature-block
+form of `unsigned` (Canonical-Payload §6), under `unsigned`'s name.
 
 Root resolution (Transport §2.1) depends on the environment and the platform and
 is not a vector; implementations test it against their own environment.
