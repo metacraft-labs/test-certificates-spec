@@ -156,16 +156,22 @@ Within whichever root, the write is atomic:
 
 Readers never see a partial file, and two producers publishing at once cannot
 corrupt each other: they either write different names, or the same bytes under
-the same name. When the final name already exists, a producer MAY keep the
-existing file — **unless the existing file carries no signature and the new
-one does**, in which case it MUST replace it. The name is the payload's hash,
-and the signature block is not part of the payload, so a signed certificate and
-the same certificate with its signature block removed or emptied share a name
-([Canonical-Payload §6](./Canonical-Payload.md#6-unsigned-certificates));
-keeping the unsigned copy would silently discard the signature. In every other
-case the two files are interchangeable: two unsigned copies are the same claim,
-and two signed copies carry signatures by the same key — `key_id` is part of
-the payload — over the same bytes.
+the same name. When the final name already exists:
+
+- a producer writing a **signed** certificate MUST replace the existing file.
+  It has just made the signature, so its copy is known to verify, while the
+  existing one may carry no signature, an emptied block or a signature that
+  fails;
+- a producer writing an **unsigned** certificate MAY keep the existing file,
+  which is either the same claim or the same claim signed.
+
+The name is the payload's hash, and the signature block is not part of the
+payload, so a signed certificate and the same certificate with its signature
+block removed or emptied share a name
+([Canonical-Payload §6](./Canonical-Payload.md#6-unsigned-certificates)).
+Keeping an unsigned copy over a signed one would silently discard the
+signature; replacing a verifying signature with another over the same bytes,
+by the same key — `key_id` is part of the payload — loses nothing.
 
 The two roots are not two levels of trust. A certificate found in the system
 root is evaluated exactly like one found in the user root (§1): what makes a
@@ -184,9 +190,10 @@ a copy byte-identical to one it has evaluated; otherwise it evaluates each, so
 that neither an unsigned copy nor one whose signature fails hides a copy that
 would have counted — coverage only grows
 ([Verification §5](./Verification.md#5-coverage-is-a-union)). Each file is one
-candidate certificate, evaluated like any other ([Verification](./Verification.md)): the
-directory it was found in is a hint for discovery, not evidence, and a record
-whose own `content` does not match its directory is reported and ignored.
+candidate certificate, evaluated like any other
+([Verification](./Verification.md)): the directory it was found in is a hint
+for discovery, not evidence, and a record whose own `content` does not match
+its directory is reported and ignored.
 
 A missing root, a missing directory or an empty one all mean **no
 certificates found** — never an error (§5). A system root that exists but
