@@ -210,21 +210,28 @@ below — the translation would be a payload its signer never saw.
 `ct test` is the producer this affects: it shipped earlier-draft clean-tree
 records before the revision.
 
-### 7.2 reprobuild's current implementation
+### 7.2 reprobuild's migrations
 
-reprobuild is the first conforming producer, and its shipped implementation
-predates this standard. The differences below are **breaking** and require
-migration; they are recorded here so nobody assumes byte-compatibility that does
-not exist.
+reprobuild is the first conforming producer, and its original implementation
+predates this standard. It has migrated once and owes a second migration; both
+are recorded here so nobody assumes byte-compatibility that does not exist.
 
-| | reprobuild today | This standard |
+**First migration (done).** reprobuild
+moved from its own format to the earlier draft of `test-certificate.v1`:
+
+| | reprobuild before the first migration | Earlier draft |
 | --- | --- | --- |
 | Schema id | `reprobuild.test-certificate.v1` | `test-certificate.v1` |
 | Framework id | absent | `framework` field, required |
-| Repo state | `repo` + `commit` flat, plus `lock = "blake3:…"` | `[certificate.vcs]` with `repo`, `content`, `untracked` and optionally `paths`, `base`; no lock digest |
+| Repo state | `repo` + `commit` flat, plus `lock = "blake3:…"` | `[certificate.vcs]` with `repo`, `commit`, `clean`, `untracked`; no lock digest |
 | Commands | not recorded | `[[certificate.command]]`, at least one, required |
 | `targets` order | as observed/run | sorted, deduplicated |
 | Signature namespace | `reprobuild-test-certificate-v1` | `test-certificate-v1` |
+
+**Second migration (owed).** As of
+reprobuild `a6522604` it still issues and matches earlier-draft records bound to
+a commit. Moving to the content binding is §7.1 for reprobuild: its records are
+re-issued, never translated.
 
 Two of these deserve comment.
 

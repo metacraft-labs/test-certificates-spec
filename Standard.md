@@ -228,7 +228,9 @@ The intended workflow is: **test, then commit.**
 
 1. Edit the working tree.
 2. Run the tests. A passing run issues a certificate whose `content` identifies
-   the tracked files as they were.
+   the tracked files as they were, and publishes it to the local certificate
+   store ([Transport §2](./Transport.md#2-the-local-certificate-store-required)),
+   outside the working tree.
 3. Commit. When the commit records exactly the content that was tested, its
    tree has that content id, and the certificate covers it — no second run.
 
@@ -337,7 +339,10 @@ being committed, and its content id is computable in a pre-commit hook
 ([Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation)).
 A project MAY therefore compose its verifiers into a **pre-commit gate**, in
 addition to the push-time or pre-receive gate, and refuse a commit whose content
-no certificate covers.
+no certificate covers. The gate finds candidates in the local certificate store
+([Transport §2](./Transport.md#2-the-local-certificate-store-required)), which
+every conforming producer populates, so it needs no knowledge of which producer
+issued them or how to ask it.
 
 The two gates are not interchangeable:
 
@@ -413,6 +418,9 @@ A **conforming producer**:
   it actually ran (§3.3)
 - computes `content` as [Content-Id](./Content-Id.md) defines it, from the state
   it executed against, and refuses where that document says no content id exists
+- writes every certificate it issues to the local certificate store
+  ([Transport §2](./Transport.md#2-the-local-certificate-store-required)), and
+  never into a working tree
 - claims only targets and platforms it actually ran (§8)
 - uses a `framework` identifier that is its own (§4)
 - if it signs, uses the primitive and namespace in §6.1 over the canonical

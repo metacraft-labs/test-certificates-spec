@@ -173,6 +173,30 @@ believe the appearance ([Verification §7.1](./Verification.md#71-precedence)).
 An implementation that answers them the same way has collapsed the distinction
 in one direction or the other.
 
+### 5. Store-path vectors
+
+> **Status:** Planned — specified here, not yet in `vectors/`.
+
+Each vector is a certificate and the path, relative to the store root, at which
+[Transport §2.2](./Transport.md#22-layout) places it.
+
+```
+vectors/store/<name>/
+  certificate.toml   # the certificate as a producer would write it
+  expected-path.txt  # v1/<algorithm>/<digest>/<payload-hash>.toml, one line
+  pins.md
+```
+
+An implementation passes by deriving the path and comparing strings. The cases
+must cover a signed and an unsigned certificate with otherwise equal fields
+(different payloads, so different names), the same certificate with and without
+its signature block in non-canonical form (the same name: the payload, not the
+file bytes, is hashed), a `manifest-v1-sha256` content id, and a scoped
+certificate (stored under its scoped content id).
+
+Root resolution (Transport §2.1) depends on the environment and the platform and
+is not a vector; implementations test it against their own environment.
+
 ## Using the suite
 
 The vectors are plain data with no runner, so any language can consume them.
@@ -185,11 +209,11 @@ There is deliberately **no harness here for implementations to invoke**. The
 signature regenerator, used to check that the vectors themselves are correct
 and to re-derive the signatures. None of it is normative, and no implementation
 is required to read, port or run any of it. `tools/walk-vectors.sh` walks all
-four groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git` and
+groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git` and
 `sha256sum`, which is the demonstration that consuming this suite needs no code
 from this repository.
 
-An implementation claiming conformance MUST run all four groups. Partial
+An implementation claiming conformance MUST run every group. Partial
 conformance is not a status the standard recognises: an implementation that
 passes the payload vectors but collapses `unverifiable` into `not-covered`
 produces wrong answers in exactly the situation where a human most needs a

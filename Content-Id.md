@@ -99,7 +99,7 @@ the tests read is a certificate that is formally valid and substantively false.
 A producer in a git repository SHOULD use the `git-tree-*` algorithm matching
 the repository's object format. It is what git already computes for every
 commit, a verifier can compute it with plumbing git ships, and it lets
-certificates be keyed by a git object ([Transport §2](./Transport.md#2-git-notes-recommended)).
+certificates be keyed by a git object ([Transport §3](./Transport.md#3-git-notes-recommended-for-pushing)).
 `manifest-v1-sha256` is for every other VCS, and for any producer that wants an
 identifier with no VCS dependency at all.
 

@@ -38,7 +38,8 @@ the document carefully.
 | [Content-Id.md](./Content-Id.md) | How the tested content is identified: self-describing, order-independent content ids |
 | [Canonical-Payload.md](./Canonical-Payload.md) | The exact byte serialization a signature covers |
 | [Verification.md](./Verification.md) | Validity, signature checking, key stores, coverage |
-| [Transport.md](./Transport.md) | Carrying certificates alongside the content they attest |
+| [Transport.md](./Transport.md) | The local certificate store every producer writes, and carrying certificates with a push |
+| [Tooling.md](./Tooling.md) | The reference helper tool: store access, pruning, and propagating certificates through git notes |
 | [Conformance.md](./Conformance.md) | What the conformance suite contains, and why |
 | [vectors/](./vectors/README.md) | The suite itself — byte-exact vectors, plain data, no runner |
 
@@ -52,7 +53,7 @@ the document carefully.
 - Registered-key stores, rotation and revocation
 - Content identifiers for the tested state
 - The generic validity check: content binding, platform, and coverage as a union
-- Transport alongside the content it attests
+- The local certificate store, and transport alongside the content attested
 
 **Out of scope** — decided by each framework, or by each project:
 
