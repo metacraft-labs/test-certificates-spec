@@ -35,30 +35,56 @@ Producers are not standardized and cannot be: one is a test runner that exits
 after a run, another a daemon that signs on behalf of many runs. Some keep
 certificates in memory and offer them on request, which is fine, but a gate
 cannot be expected to know every producer's interface. The local store is the
-interface they share: a per-user directory, addressed by content id, that every
+interface they share: a set of directories, addressed by content id, that every
 conforming producer writes and any tool can read.
+
+Some producers run as the user whose tests they observe — a test runner is
+usually one. Others deliberately do not: a signing daemon that guards its key
+runs under its own account, precisely so that the tested code cannot reach the
+key ([Standard §6.2](./Standard.md#62-issuance-integrity)). The store therefore
+has two roots per user — one the user owns, one the privileged producer owns —
+and readers search both.
 
 ### 2.1 Location
 
-The store root is, in order:
+A user's store has two roots, each holding the same layout (§2.2).
+
+**The user root**, owned and written by the user, is, in order:
 
 1. `$TEST_CERTIFICATES_DIR`, when set to a non-empty absolute path;
 2. otherwise the platform's per-user state directory:
 
-| Platform | Root |
-| -------- | ---- |
+| Platform | User root |
+| -------- | --------- |
 | Linux and other Unix-likes | `$XDG_STATE_HOME/test-certificates`, when `XDG_STATE_HOME` is set to an absolute path; else `$HOME/.local/state/test-certificates` |
 | macOS | `$HOME/Library/Application Support/test-certificates` |
 | Windows | `%LOCALAPPDATA%\test-certificates` |
 
-A relative `$TEST_CERTIFICATES_DIR` or `$XDG_STATE_HOME` is ignored, as the XDG
-specification requires for the latter: a store whose location depends on the
-current directory would be a different store for each process.
+**The system root**, owned and written by privileged producers and readable by
+the user, is the user's partition of a machine-wide directory:
 
-The store is **per user**. It is not a shared or system-wide location, and a
-producer MUST NOT write to another user's store. A CI runner, a container or a
-sandbox has whichever store its environment resolves to, and points
-`TEST_CERTIFICATES_DIR` elsewhere when it needs to.
+1. `$TEST_CERTIFICATES_SYSTEM_DIR/<user>`, when set to a non-empty absolute
+   path;
+2. otherwise:
+
+| Platform | System root |
+| -------- | ----------- |
+| Linux and other Unix-likes | `/var/lib/test-certificates/<uid>` |
+| macOS | `/Library/Application Support/test-certificates/<uid>` |
+| Windows | `%ProgramData%\test-certificates\<SID>` |
+
+`<user>` is the numeric uid on POSIX systems and the account SID on Windows —
+identifiers that do not change when an account is renamed.
+
+A relative `$TEST_CERTIFICATES_DIR`, `$TEST_CERTIFICATES_SYSTEM_DIR` or
+`$XDG_STATE_HOME` is ignored, as the XDG specification requires for the last: a
+store whose location depends on the current directory would be a different
+store for each process.
+
+Neither root is shared between users. A user's system root holds only
+certificates for runs made on that user's behalf. A CI runner, a container or a
+sandbox has whichever roots its environment resolves to, and sets the variables
+when it needs others.
 
 ### 2.2 Layout
 
@@ -96,10 +122,33 @@ the scope.
 
 ### 2.3 Writing
 
-A conforming producer MUST write every certificate it issues to the store, in
-addition to any other carrier it uses. It writes atomically:
+A conforming producer MUST deliver every certificate it issues to the store of
+the user on whose behalf the tests ran, in addition to any other carrier it
+uses. **A producer never writes into another account's directories**, and
+which root it delivers to follows from that:
 
-1. create the directories as needed — the root, on platforms that have them,
+- **A producer running as the user** writes to the user root.
+- **A producer running under its own account** — a signing daemon — returns the
+  certificate to the client that requested or reported the run, and **the
+  client**, running as the user, writes it to the user root. This is the normal
+  path, and it keeps a privileged process out of directories the user controls,
+  where following a user-planted symbolic link would let the user redirect a
+  privileged write.
+- **A privileged producer with no client to return to** — issuing for a run it
+  observed on its own, such as a watch or a scheduled re-run — writes to the
+  user's system root. It identifies the user from the operating system's
+  authenticated credentials for the run (peer credentials on its socket, the
+  owner of the observed process), never from a value the run supplied.
+
+The system root's directories are created by the privileged producer or its
+installer, owned by the producer's account, and **readable but not writable by
+the user** whose partition it is — through group ownership or an access-control
+entry, whichever the platform provides. A producer writing there MUST NOT follow
+symbolic links within the root.
+
+Within whichever root, the write is atomic:
+
+1. create the directories as needed — a user root, on platforms that have them,
    with permissions readable and writable by the owner only;
 2. write the file under a temporary name in the **same directory**, beginning
    with `.` and not ending in `.toml`;
@@ -111,16 +160,26 @@ the same name. When the final name already exists, a producer MAY keep the
 existing file; for an unsigned claim the two are identical, and for a signed
 one either signature verifies over the same payload.
 
+The two roots are not two levels of trust. A certificate found in the system
+root is evaluated exactly like one found in the user root (§1): what makes a
+daemon-signed certificate worth more is its signature under a key the consumer
+registered, not the directory it was found in. The system root exists because a
+privileged producer cannot safely write anywhere else, not to vouch for what it
+holds.
+
 ### 2.4 Reading
 
-A reader lists `<root>/v1/<algorithm>/<digest>/` and reads every file whose
-name ends in `.toml` and does not begin with `.`. Each file is one candidate
-certificate, evaluated like any other ([Verification](./Verification.md)): the
+A reader lists `<root>/v1/<algorithm>/<digest>/` **in both roots** and reads
+every file whose name ends in `.toml` and does not begin with `.`. A name found
+in both roots is the same payload and is evaluated once. Each file is one
+candidate certificate, evaluated like any other ([Verification](./Verification.md)): the
 directory it was found in is a hint for discovery, not evidence, and a record
 whose own `content` does not match its directory is reported and ignored.
 
 A missing root, a missing directory or an empty one all mean **no
-certificates found** — never an error (§5).
+certificates found** — never an error (§5). A system root that exists but
+cannot be read is reported, since it usually means a misconfigured install;
+the user root is still searched.
 
 ### 2.5 It is a cache
 
@@ -129,12 +188,15 @@ certificate staying there; whatever needs it beyond the local machine copies it
 to a durable carrier — git notes at push time (§3), a CI artifact, a gateway
 submission.
 
-The store is bounded by **pruning**, which removes whole content directories:
+The store is bounded by **pruning**, which removes whole content directories.
+Each root is pruned by whoever writes it — the user's tooling prunes the user
+root, a privileged producer prunes the system partitions it writes:
 
 - A producer or tool that prunes SHOULD keep the content directories most
   recently written — the reference policy keeps the newest 20, by the
   directory's modification time, which writing a file updates — plus the
-  directory for the content of the current repository's `HEAD^{tree}`.
+  directory for the content of the current repository's `HEAD^{tree}` where
+  the pruner knows one.
 - Pruning MUST NOT remove a directory a producer is writing into. Removing a
   directory, then the producer's rename failing, is acceptable: the producer
   recreates it and retries once.

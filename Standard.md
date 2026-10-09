@@ -418,9 +418,10 @@ A **conforming producer**:
   it actually ran (§3.3)
 - computes `content` as [Content-Id](./Content-Id.md) defines it, from the state
   it executed against, and refuses where that document says no content id exists
-- writes every certificate it issues to the local certificate store
-  ([Transport §2](./Transport.md#2-the-local-certificate-store-required)), and
-  never into a working tree
+- delivers every certificate it issues to the local certificate store of the
+  user on whose behalf the tests ran, never writing into another account's
+  directories or into a working tree
+  ([Transport §2.3](./Transport.md#23-writing))
 - claims only targets and platforms it actually ran (§8)
 - uses a `framework` identifier that is its own (§4)
 - if it signs, uses the primitive and namespace in §6.1 over the canonical
