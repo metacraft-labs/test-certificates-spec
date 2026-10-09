@@ -53,15 +53,11 @@ Required coverage — every one of these is a place the prose can be misread:
 | `multiple-commands` | Execution order preserved, not sorted |
 | `argv-duplicates` | Repeated arguments retained |
 | `argv-empty-string` | An empty argument survives |
-| `scoped` | `paths` present, sorted, deduplicated |
+| `scoped` | `paths` present, sorted, deduplicated, before `content` |
 | `unscoped` | `paths` omitted entirely, not `[]` |
-| `dirty-tree` | `worktree` present with `tree` |
-| `dirty-patch-only` | `worktree` present with `patch_digest` only |
-| `clean-no-worktree` | `worktree` absent, and must be |
-
-The suite additionally carries `dirty-tree-and-patch`, which shows all three
-`worktree` keys in their fixed order — the fourth worktree shape, which none of
-the three rows above reaches.
+| `base-present` | `base` present, last in `[certificate.vcs]`, after `untracked` |
+| `content-manifest` | `content` emitted verbatim for a non-git algorithm; `base` absent |
+| `untracked-true` | `untracked = true` emitted as a bare boolean |
 
 ### 2. Signature vectors
 
@@ -90,14 +86,42 @@ The signing keys are published in `vectors/signature/keys/` so that anyone can
 re-derive the group and confirm it was not fabricated. They are worthless as
 keys and MUST NOT be registered anywhere.
 
-### 3. Verification-decision vectors
+### 3. Content-id vectors
+
+Each vector is a set of tracked entries and the content ids they must produce
+([Content-Id](./Content-Id.md)), whole-repository and scoped.
+
+```
+vectors/content/<name>/
+  entries.json     # tracked entries: path, mode, content (base64), in arbitrary order
+  expected.json    # content ids, per algorithm and per scope
+  pins.md
+```
+
+An implementation passes by computing every listed id from `entries.json` and
+comparing strings. The `git-tree-*` ids are additionally re-derivable with git
+itself, which is the check that the vector was not fabricated.
+
+Required coverage:
+
+| Vector | What it pins |
+| ------ | ------------ |
+| `order-independent` | Entries supplied out of order yield the same ids |
+| `byte-order` | `manifest-v1` sorts by raw full-path bytes, not by a per-directory walk: `a.b` precedes `a/b`, which precedes `a0` |
+| `modes` | Regular, executable, symlink and nested-repository entries |
+| `scope-keeps-paths` | A scoped `git-tree` id keeps full paths, and is not the subtree id; `src/db` excludes `src/dbx` |
+| `empty-scope` | A scope matching nothing yields the empty tree / the digest of no records |
+| `non-ascii-path` | Paths are raw bytes: no Unicode normalisation |
+| `sha256-object-format` | `git-tree-sha256` for the same entries |
+
+### 4. Verification-decision vectors
 
 Each vector is a state, a requirement, a set of certificates and a key store,
 with the expected outcome.
 
 ```
 vectors/verify/<name>/
-  state.json           # repo, commit and tree id under evaluation
+  state.json           # repo, commit, and the content ids the consumer can compute
   requirement.json     # framework(s), targets, platforms, signature policy, scope
   certificates/*.toml
   registered-keys.toml
@@ -121,9 +145,11 @@ Required coverage:
 | `revoked-key` | Rejected although the signature is cryptographically valid |
 | `empty-key-store` | Fail-closed: everything rejected |
 | `unsigned-required` | Rejected outright, not downgraded |
-| `dirty-tree-matches` | A `worktree.tree` matching the committed tree covers it |
-| `dirty-tree-differs` | Does not cover |
-| `dirty-no-worktree` | Rejected: identifies no state |
+| `content-matches-other-base` | A certificate whose `base` is not the commit under evaluation, but whose `content` matches, covers it |
+| `content-differs` | Does not cover |
+| `content-malformed` | Rejected: decidably invalid, so not covered |
+| `content-unknown-algorithm` | **unverifiable** — an algorithm the consumer cannot compute is not a mismatch |
+| `earlier-draft-record` | A record in the pre-2026-10-09 shape (`commit`, `clean`, no `content`) is decidably invalid: not covered |
 | `scope-too-narrow` | A scoped certificate does not satisfy a broader requirement |
 | `unreadable-store` | **unverifiable**, distinctly from not-covered |
 
@@ -159,10 +185,11 @@ There is deliberately **no harness here for implementations to invoke**. The
 signature regenerator, used to check that the vectors themselves are correct
 and to re-derive the signatures. None of it is normative, and no implementation
 is required to read, port or run any of it. `tools/walk-vectors.sh` walks all
-three groups with nothing but POSIX shell, `jq` and `ssh-keygen`, which is the
-demonstration that consuming this suite needs no code from this repository.
+four groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git` and
+`sha256sum`, which is the demonstration that consuming this suite needs no code
+from this repository.
 
-An implementation claiming conformance MUST run all three groups. Partial
+An implementation claiming conformance MUST run all four groups. Partial
 conformance is not a status the standard recognises: an implementation that
 passes the payload vectors but collapses `unverifiable` into `not-covered`
 produces wrong answers in exactly the situation where a human most needs a
@@ -178,4 +205,8 @@ correct one.
   — and deciding which is the whole point of having them.
 - Changing a vector's expected bytes is a **breaking change to the standard**
   and requires a schema version bump, because every previously issued signature
-  was made over the old bytes.
+  was made over the old bytes. The one exception was made while v1 was a draft:
+  the 2026-10-09 revision replaced the commit binding with a content binding
+  under the same schema id
+  ([Canonical-Payload §7.1](./Canonical-Payload.md#71-the-2026-10-09-revision-content-replaces-commit)).
+  Once v1 leaves draft, there are no more.

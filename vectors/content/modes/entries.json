@@ -1,0 +1,22 @@
+[
+  {
+    "path": "bin/run.sh",
+    "mode": "100755",
+    "content_b64": "IyEvYmluL3NoCmV4ZWMgZXhhbXBsZSAiJEAiCg=="
+  },
+  {
+    "path": "lib.c",
+    "mode": "100644",
+    "content_b64": "aW50IGxpYjsK"
+  },
+  {
+    "path": "current",
+    "mode": "120000",
+    "content_b64": "bGliLmM="
+  },
+  {
+    "path": "vendor/dep",
+    "mode": "160000",
+    "content_b64": "M2YyYTljMWU1YjdkNDA2OGExYzJlM2Y0MDUxNjI3Mzg0OTVhNmI3Yw=="
+  }
+]

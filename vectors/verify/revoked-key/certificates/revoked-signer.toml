@@ -12,8 +12,7 @@ key_id = "example-key-2025-q4"
 
 [certificate.vcs]
 repo = "example"
-commit = "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4"
-clean = true
+content = "git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766"
 untracked = false
 
 [[certificate.command]]
@@ -21,4 +20,4 @@ argv = ["example-test", "run", "--targets", "t-integration,t-unit"]
 
 [certificate.signature]
 algorithm = "ed25519"
-value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgcWlnNGgf680RDA6obLISIqiF+qjsNMUjVlT/f5fps4oAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEASjsdeTemR4t6m1mvyTI6dsyy2jpieU8Vplidq0bnS81/eFwsYW4ldsLJ9BsNKMOOKEkNy6LqOEZ6eQjt1/J0G"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgcWlnNGgf680RDA6obLISIqiF+qjsNMUjVlT/f5fps4oAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEATX/3LRmnpDIeZWt/eZ3yJPVaCiKNG6LRW6YqVAmD8HcNdsiASEiaCv5sUdzFR97p00gJ8vhcW/zmV3Zr6LKYB"

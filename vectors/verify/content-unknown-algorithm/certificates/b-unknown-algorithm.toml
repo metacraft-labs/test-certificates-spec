@@ -1,0 +1,23 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-integration"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+key_id = "example-key-2026-q2"
+
+[certificate.vcs]
+repo = "example"
+content = "blake3-manifest-v1:6c7f1a2b3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccdde"
+untracked = false
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-integration"]
+
+[certificate.signature]
+algorithm = "ed25519"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEAH5wO969jUT0h2nyR4MPtP7nMYGXpCc1HxI+6Mu6IVWnBRh74xcfmV0ttigfXByJ0j73t6X4RVqFTQmZSaDugL"

@@ -1,0 +1,26 @@
+[
+  {
+    "algorithm": "manifest-v1-sha256",
+    "paths": null,
+    "id": "manifest-v1-sha256:1627cc999756b257f236a240b7c107b2b5353f0911e7295a1bafd05da1cfd2ad"
+  },
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": null,
+    "id": "git-tree-sha1:a681e65f5f2e61d66d1a912dcdaa16f594f03c15"
+  },
+  {
+    "algorithm": "manifest-v1-sha256",
+    "paths": [
+      "a"
+    ],
+    "id": "manifest-v1-sha256:d84f6f4e8defed0ef88cb60862c2dee0aafc7cbb3a0d19a5cd191c52a2212c84"
+  },
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": [
+      "a"
+    ],
+    "id": "git-tree-sha1:0c09fade56e1032b586cea08e2a0a14500c79d68"
+  }
+]

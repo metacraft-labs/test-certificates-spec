@@ -1,5 +1,18 @@
 {
   "repo": "example",
   "commit": "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4",
-  "tree": "9f8e7d6c5b4a3928170695e4d3c2b1a099887766"
+  "content": [
+    {
+      "algorithm": "git-tree-sha1",
+      "paths": null,
+      "id": "git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766"
+    },
+    {
+      "algorithm": "git-tree-sha1",
+      "paths": [
+        "src/db-backend"
+      ],
+      "id": "git-tree-sha1:3c1f5e0a9b8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e"
+    }
+  ]
 }

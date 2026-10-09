@@ -1,0 +1,16 @@
+{
+  "outcome": "unverifiable",
+  "reason": "both candidates carry well-formed content ids in algorithms this consumer cannot compute, and together they would cover the requirement",
+  "unverifiable_because": "no content id in manifest-v1-sha256 or blake3-manifest-v1 can be computed for this state",
+  "missing": [],
+  "unevaluated": [
+    {
+      "certificate": "a-manifest.toml",
+      "why": "content id algorithm 'manifest-v1-sha256' cannot be computed by this consumer"
+    },
+    {
+      "certificate": "b-unknown-algorithm.toml",
+      "why": "content id algorithm 'blake3-manifest-v1' is not one this standard defines, so it cannot be computed; its digest length is not judged"
+    }
+  ]
+}

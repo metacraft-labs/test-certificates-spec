@@ -1,0 +1,23 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-unit"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+key_id = "example-key-2026-q2"
+
+[certificate.vcs]
+repo = "example"
+content = "manifest-v1-sha256:22fcef71cdff4fffd4498f6ae08ab6c1f3f3c8b632701c7f2970a3bdbb991391"
+untracked = false
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-unit"]
+
+[certificate.signature]
+algorithm = "ed25519"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBSznwJNii0esJXkvY7OZqp0RaOHeZA2XwW1ShZBA73YsvnvdUoZHkBNYpN0DgN0bym8E5Lm75XyAlm38Q6GJcB"

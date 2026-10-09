@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "the certificate's content names different content from the state under evaluation, although its base is the very commit being evaluated",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "differs.toml",
+      "why": "vcs.content does not equal the content id of the state under evaluation"
+    }
+  ]
+}

@@ -38,15 +38,10 @@ key_id = "<key-id>"
 
 [certificate.vcs]
 repo = "<repo>"
-commit = "<commit>"
 paths = ["<p1>", "<p2>"]
-clean = true
+content = "<algorithm>:<digest>"
 untracked = false
-
-[certificate.vcs.worktree]
-tree = "<content-id>"
-format = "<patch-format>"
-patch_digest = "<algo>:<hex>"
+base = "<commit>"
 
 [[certificate.command]]
 argv = ["<arg0>", "<arg1>"]
@@ -59,8 +54,8 @@ Rules:
 2. **One space either side of `=`.**
 3. `key_id` is **omitted entirely** when the certificate is unsigned — not
    emitted empty. An omitted key and an empty key are different payloads.
-4. `clean` and `untracked` are TOML booleans, emitted as bare `true` / `false`,
-   never as quoted strings.
+4. `untracked` is a TOML boolean, emitted as bare `true` / `false`, never as a
+   quoted string.
 5. Tables are separated by exactly one blank line. Exactly one blank line follows
    the `schema` line. No other blank lines.
 6. `[[certificate.command]]` entries appear **in execution order**, which is part
@@ -74,12 +69,17 @@ Rules:
 8. `paths` is sorted and deduplicated like `targets`, and is **omitted entirely**
    when the claim covers the whole repository — never emitted as `[]`. An omitted
    key and an empty array are different payloads.
-9. `[certificate.vcs.worktree]` is **present only when `clean = false`**, follows
-   the `[certificate.vcs]` table after one blank line, and omits any of its three
-   keys that are absent.
-10. **Every value is a quoted string except `clean` and `untracked`.** In
-    particular `issued_at` is a TOML *basic string*, never a bare TOML datetime,
-    and its characters are copied verbatim — nothing re-formats the timestamp.
+9. `content` is emitted **verbatim**, as the self-describing string
+   [Content-Id §1](./Content-Id.md#1-form) defines. The serializer does not
+   split, re-case or validate it; a malformed content id is the verifier's
+   finding ([Verification §4.1.1](./Verification.md#411-matching-content)), and
+   rewriting it here would sign a value the producer never computed.
+10. `base` is **omitted entirely** when absent — never emitted empty — and,
+    being informational, is still covered by the signature like every other
+    field. It is the last key of `[certificate.vcs]`.
+11. **Every value is a quoted string except `untracked`.** In particular
+    `issued_at` is a TOML *basic string*, never a bare TOML datetime, and its
+    characters are copied verbatim — nothing re-formats the timestamp.
     Since RFC 3339 spells the same instant as both `Z` and `+00:00`, and the two
     are different bytes and therefore different signatures, producers MUST use
     the `Z` form.
@@ -184,7 +184,33 @@ The empty-block form exists because it keeps the on-disk shape stable between an
 unsigned record and the signed record it later becomes. Neither form affects the
 canonical payload, since the signature block is excluded from it in both cases.
 
-## 7. Known divergences from reprobuild's current implementation
+## 7. Revisions and known divergences
+
+### 7.1 The 2026-10-09 revision: content replaces commit
+
+v1 was revised in place while still a draft: `[certificate.vcs]` no longer names
+a `commit` with a `clean` flag and an optional `worktree` table, but carries a
+required `content` id and an optional, informational `base`
+([Standard §2.1](./Standard.md#21-content-not-commit)).
+
+| | Earlier draft | This revision |
+| --- | --- | --- |
+| Binding | `commit`, `clean`, and `[certificate.vcs.worktree]` (`tree`, `format`, `patch_digest`) when dirty | `content`, required, self-describing ([Content-Id](./Content-Id.md)) |
+| Commit | `commit`, required, matched exactly | `base`, optional, never matched |
+| Key order | `repo`, `commit`, `paths`, `clean`, `untracked` | `repo`, `paths`, `content`, `untracked`, `base` |
+
+The schema id did not change, so the two shapes share `test-certificate.v1`. A
+record in the earlier shape lacks the required `content` field and is therefore
+**decidably invalid** under this revision (Standard §7) — not covered, never
+unverifiable. That is the intended outcome: the remedy is to run the tests
+again, which issues a record in the current shape. Earlier-draft records MUST
+NOT be translated into the new shape, for the reason given for reprobuild
+below — the translation would be a payload its signer never saw.
+
+`ct test` is the producer this affects: it shipped earlier-draft clean-tree
+records before the revision.
+
+### 7.2 reprobuild's current implementation
 
 reprobuild is the first conforming producer, and its shipped implementation
 predates this standard. The differences below are **breaking** and require
@@ -195,18 +221,18 @@ not exist.
 | --- | --- | --- |
 | Schema id | `reprobuild.test-certificate.v1` | `test-certificate.v1` |
 | Framework id | absent | `framework` field, required |
-| Repo state | `repo` + `commit` flat, plus `lock = "blake3:…"` | `[certificate.vcs]` with `repo`, `commit`, `clean`, `untracked`; no lock digest |
+| Repo state | `repo` + `commit` flat, plus `lock = "blake3:…"` | `[certificate.vcs]` with `repo`, `content`, `untracked` and optionally `paths`, `base`; no lock digest |
 | Commands | not recorded | `[[certificate.command]]`, at least one, required |
 | `targets` order | as observed/run | sorted, deduplicated |
 | Signature namespace | `reprobuild-test-certificate-v1` | `test-certificate-v1` |
 
 Two of these deserve comment.
 
-**The lock digest is gone, not moved.** reprobuild's `repro.lock` is committed
-per repo, so `vcs.commit` already binds it: a verifier that wants to check the
-lock resolves it at that commit itself. The digest field was carrying
-information the commit already implied, at the cost of making the format
-ecosystem-specific.
+**The lock digest is gone, not moved.** reprobuild's `repro.lock` is tracked
+per repo, so `vcs.content` already binds it: a verifier that wants to check the
+lock resolves it from the content under evaluation itself. The digest field
+was carrying information the content already implied, at the cost of making the
+format ecosystem-specific.
 
 **`targets` sorting changes the signed bytes** for any certificate whose targets
 did not happen to run in sorted order. Certificates issued before migration

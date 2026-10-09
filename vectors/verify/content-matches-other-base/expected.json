@@ -1,0 +1,5 @@
+{
+  "outcome": "covered",
+  "reason": "the certificate's content equals the content id of the state under evaluation; its base names a different commit, which is never compared",
+  "missing": []
+}

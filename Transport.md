@@ -20,31 +20,64 @@ at once. The rest of this document describes carriers, not requirements.
 
 ## 2. Git notes (recommended)
 
-Certificates attach to the commit they attest, in a dedicated notes ref:
+Certificates attach to the **tree object their content id names**, in a
+dedicated notes ref:
 
 ```
 refs/notes/<vendor>/certificates
 ```
 
-A note is data attached to a commit **without changing its SHA**, which is what
-makes this work: a certificate can be produced after the commit exists — indeed
-it must be, since it attests to that exact commit — without rewriting history.
+A note is data attached to a git object without changing it, and the annotated
+object may be any object — a tree as readily as a commit. For a certificate
+whose `content` is `git-tree-sha1:<oid>` or `git-tree-sha256:<oid>`
+([Content-Id §4.1](./Content-Id.md#41-git-tree-sha1-and-git-tree-sha256)), the
+note is keyed by `<oid>`.
 
-- The notes tree maps `<commit-sha>` to a blob holding the certificate(s).
-- **Multiple certificates per commit are normal**, typically one per platform.
+Keying by content rather than by commit is what the content binding requires:
+
+- **At issuance there is no commit to attach to.** The certificate is produced
+  before the commit is made ([Standard §3.2.2](./Standard.md#322-certifying-before-the-commit)).
+  The tree object exists — computing the content id with `git write-tree` wrote
+  it — so the note can be added immediately.
+- **One note serves every commit with that content.** A verifier evaluating
+  commit `C` looks up the notes on `C^{tree}`; a pre-commit gate looks up the
+  notes on the tree `git write-tree` returns for the index being committed.
+  Neither needs to know which commit, if any, the producer was on.
+
+Rules:
+
+- The notes tree maps `<tree-oid>` to a blob holding the certificate(s).
+- **Multiple certificates per content are normal**, typically one per platform.
   A carrier MUST support several, and a verifier MUST evaluate their union
-  ([Verification §4](./Verification.md#4-coverage-is-a-union)).
+  ([Verification §5](./Verification.md#5-coverage-is-a-union)).
+- **A scoped certificate is keyed by its scoped tree**, the tree holding only
+  the in-scope entries ([Content-Id §4.1](./Content-Id.md#41-git-tree-sha1-and-git-tree-sha256)).
+  A consumer therefore finds it only by computing that scoped id for the state
+  in front of it — which requires knowing the scope. Scopes a framework
+  declares in its version-controlled configuration are known in advance; a
+  consumer that accepts other scopes has to enumerate the notes ref instead.
+  Scoping trades discoverability for a narrower claim, and a producer SHOULD
+  only scope when its consumers can find the result.
 - **Notes are not pushed or fetched by default.** Producers must push the notes
   ref explicitly, and verifiers must fetch it. Forgetting this is the most common
   operational failure with this carrier, and it presents as "no certificates"
-  rather than as an error.
+  rather than as an error. A pre-commit gate needs only the local notes ref; a
+  receiving-side gate needs it pushed alongside the commits it covers.
 - **Notes are mutable** — anyone with push access can rewrite them. This is
   exactly why §1 holds: a note's contents are worth what their signature is
   worth, and nothing more.
+- **An annotated tree need not be reachable**, and the notes ref does not keep it
+  alive. That costs nothing: a verifier computes the content id of the state in
+  front of it and looks the note up by that id, so it never needs the producer's
+  tree object.
 
-A verifier MUST ignore notes whose `commit` field does not match the commit they
-are attached to. Attaching a valid certificate for commit A to commit B is
-otherwise a trivial confusion attack, and both records look individually fine.
+A verifier MUST ignore a note whose certificate's `content` does not name the
+object the note is attached to, and SHOULD report it. The content check would
+reject such a certificate anyway; the rule is stated so that a misattached
+record is reported as a carrier fault rather than as untested content.
+
+`manifest-v1-sha256` content ids name no git object, and travel by the other
+carriers (§3).
 
 ### 2.1 Multiple records in one note
 
@@ -57,8 +90,8 @@ separation, since a certificate may legitimately contain blank lines.
 
 | Carrier | Notes |
 | ------- | ----- |
-| A dedicated ref (`refs/certificates/<commit>`) | Immutable-by-convention; needs its own push/fetch discipline |
-| A file beside the lock or in the build output | Simple; travels with an artifact rather than with history |
+| A dedicated ref (`refs/certificates/<algorithm>/<digest>`) | Keyed by content id, for any algorithm; immutable-by-convention; needs its own push/fetch discipline |
+| A directory of files named by content id | Simple; local to a checkout or travels with an artifact rather than with history. Must not be tracked: a tracked certificate would change the content it attests |
 | A CI artifact | Natural where the issuer is CI; needs an out-of-band way to find it |
 | An HTTP endpoint | Useful for central verification; the endpoint is not a trust input |
 

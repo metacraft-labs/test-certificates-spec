@@ -32,7 +32,7 @@ by the `framework` field.
   certificate, even when the record parses cleanly. The fields are shared; their
   framework-specific meaning is not.
 
-This ordering is deliberate. Checking a signature or a VCS match on a
+This ordering is deliberate. Checking a signature or a content match on a
 certificate you were never going to evaluate wastes work and, worse, produces
 verdicts about certificates you do not understand.
 
@@ -93,30 +93,48 @@ Every consumer, whatever its framework, MUST check:
 
 | Field | Rule |
 | ----- | ---- |
-| `vcs.commit` | Exact equality with the commit under evaluation, **or** the base of a `worktree` claim that matches (§4.1.1) |
-| `vcs.clean` | When `true`, the tested state is `commit` itself. When `false`, `worktree` MUST identify it (§4.1.1). |
+| `vcs.content` | Equal to the content id of the state under evaluation, computed with the certificate's algorithm over the certificate's scope (§4.1.1) |
 | `vcs.paths` | When present, the claim covers only those paths. A consumer requiring broader coverage MUST reject it (§4.1.2). |
-| `vcs.untracked` | Consumer's choice. Untracked files usually mean scratch work, but can mean a file the build picked up. |
+| `vcs.untracked` | Consumer's choice. Untracked files are outside `content`; they usually mean scratch work, but can mean a file the build picked up. |
+| `vcs.base` | **Not checked.** It MUST NOT be compared with the commit under evaluation (§4.1.1). |
 | `platform` | Exact equality with the platform being satisfied |
 | `result` | MUST be `passed` |
 
-#### 4.1.1 Matching a modified-worktree claim
+#### 4.1.1 Matching content
 
-A certificate with `clean = false` does not describe `commit`; it describes
-`commit` plus the modification in `worktree`. A consumer matches it by comparing
-**content**, not commit identity:
+A certificate describes **content**, not a commit, so a consumer matches it by
+comparing content ids:
 
-- With `tree`: the state under evaluation matches when its canonical content id
-  for the scope equals `worktree.tree`. In git this is a tree-oid comparison, and
-  it holds across commit metadata — so a certificate issued against a dirty tree
-  still covers the commit that tree was later committed as.
-- With `patch_digest` only: the consumer must be able to reproduce the patch from
-  `commit` to the state under evaluation, under the certificate's `format`, and
-  compare digests. A consumer that cannot reproduce that exact format MUST report
-  the certificate **unverifiable** (§7), not invalid.
+1. Take the algorithm from the certificate's `content`
+   ([Content-Id §1](./Content-Id.md#1-form)).
+2. Compute that algorithm, over the certificate's `paths`, for the state under
+   evaluation — a commit's tree, the index a pre-commit gate is about to
+   commit, or a working tree
+   ([Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation)).
+3. The certificate matches when the two ids are equal.
 
-A `clean = false` certificate carrying no `worktree` identifies no state at all
-and MUST be rejected outright.
+The match holds across everything that is not content. A certificate issued on
+top of commit `cc11…`, against a working tree later committed as `a858…` with
+its own message, author and parents, covers `a858…` — and so does any later
+commit that records the same content. Comparing `base`, or any commit id, to the
+state under evaluation is therefore always wrong: it rejects exactly the
+certificates this design exists to make valid.
+
+Three outcomes besides a match:
+
+- **The ids differ.** The certificate does not describe this state. It is
+  discarded, like a certificate for another platform: it is not evidence here,
+  and it is not evidence against anything.
+- **The content id is malformed** — no `:`, a digest that is not lowercase
+  hex, a digest of the wrong length for an algorithm Content-Id §4 defines; the
+  full rule, including where the algorithm ends, is in
+  [Content-Id §1](./Content-Id.md#1-form). The record is **decidably invalid**
+  and is rejected, without repair.
+- **The consumer cannot compute the algorithm** for this state — an algorithm it
+  does not implement, an algorithm Content-Id §4 does not define, or
+  `git-tree-sha256` against a repository in the SHA-1 object format. It has not established a mismatch, so the certificate is
+  **unverifiable** (§7), not invalid, and §7.1 decides whether that affects the
+  outcome.
 
 #### 4.1.2 Scoped claims
 
@@ -134,24 +152,26 @@ Past the generic check, validity is the **framework's own question**, and the
 standard defines none of it.
 
 The pattern the standard is built around: a framework resolves **its own lock
-file — or config, or target definitions — at `vcs.commit`**, since those are
-under version control and therefore bound by the commit, and applies whatever
-rules it likes. It might check that its lock is internally consistent, that
+file — or config, or target definitions — in the content under evaluation**,
+since those are under version control and therefore bound by `vcs.content`, and
+applies whatever rules it likes. It might check that its lock is internally consistent, that
 declared dependencies resolve, that the target set in the certificate matches
-the targets the config defines at that commit, or nothing at all.
+the targets the config defines in that content, or nothing at all.
 
 Consumers MUST NOT invent a generic substitute for this step. There is no
 portable notion of "the environment matched"; there is only "this framework says
-its own inputs at this commit are consistent with this certificate".
+its own inputs in this content are consistent with this certificate".
 
 What the standard guarantees is the precondition that makes the step possible:
-`vcs.commit` plus `vcs.clean` means the framework's committed inputs are exactly
-recoverable.
+once `vcs.content` matches, the framework's version-controlled inputs are
+exactly recoverable from the state in front of it — the commit's tree, or the
+index being committed — whether or not the certificate's own `base` still
+exists.
 
 ### 4.3 Time
 
 `issued_at` is informational. Consumers MAY apply a freshness policy, but MUST
-NOT rely on it for correctness: the VCS binding already pins the state, and a
+NOT rely on it for correctness: the content binding already pins the state, and a
 correctly-bound certificate does not become wrong by ageing.
 
 Consumers MUST NOT reject a certificate solely because `issued_at` is in the
@@ -175,7 +195,7 @@ cert C: {integration}       on macos/arm64   ─┘
 The algorithm:
 
 1. Filter to certificates whose `framework` this consumer implements (§2).
-2. Discard those failing authenticity (§3) or the VCS/platform match (§4).
+2. Discard those failing authenticity (§3) or the content/platform match (§4).
 3. For each required platform, union the `targets` of the survivors **for that
    platform**.
 4. Coverage holds when every required target appears in that union, for every
@@ -229,12 +249,11 @@ Note that "no certificates from a framework I implement" is **not**
 unverifiable — it is simply not covered. Unverifiable is reserved for cases
 where evaluation itself broke down.
 
-Nor is a record that is decidably invalid. A `clean = false` certificate with no
-`worktree`, a missing required field, a revoked key, a scope narrower than the
-requirement: in each of those the consumer asked the question and got an answer.
-Unverifiable is for the cases where it could not ask — an unreadable key store, a
-schema version it does not implement, a `patch_digest` in a `format` it cannot
-reproduce.
+Nor is a record that is decidably invalid. A malformed content id, a missing
+required field, a revoked key, a scope narrower than the requirement: in each of
+those the consumer asked the question and got an answer. Unverifiable is for the
+cases where it could not ask — an unreadable key store, a schema version it does
+not implement, a content id in an algorithm it cannot compute.
 
 ### 7.1 Precedence
 
@@ -280,8 +299,8 @@ rule 2:
   uninterpretable record it is undecidable, and MUST be assumed.
 
 - **A record the consumer can interpret but could not verify** — one denied an
-  answer by an unreadable key store (§3.1), or carrying a `patch_digest` in a
-  `format` it cannot reproduce (§4.1.1) — is potentially relevant **only if its
+  answer by an unreadable key store (§3.1), or carrying a content id in an
+  algorithm it cannot compute (§4.1.1) — is potentially relevant **only if its
   interpreted scope could satisfy some part of the requirement**. Its fields are
   readable, in a schema this consumer implements, so a certificate for a
   platform that is not required, or naming no required target, could not have

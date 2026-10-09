@@ -3,7 +3,7 @@
 **Pins:** precedence — unverifiable wins over not-covered, but not
 over a requirement already met.
 
-> Beyond the eleven cases required by Conformance.md §3. Added together with
+> Beyond the thirteen cases required by Conformance.md §4. Added together with
 > the precedence paragraph in Verification.md §7 — see vectors/README.md,
 > "Ambiguities this suite closed".
 

@@ -1,0 +1,11 @@
+{
+  "repo": "example",
+  "commit": "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4",
+  "content": [
+    {
+      "algorithm": "git-tree-sha1",
+      "paths": null,
+      "id": "git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766"
+    }
+  ]
+}

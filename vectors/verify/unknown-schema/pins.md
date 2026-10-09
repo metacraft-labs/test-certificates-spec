@@ -3,7 +3,7 @@
 **Pins:** an unimplemented schema version is unverifiable, not
 not-covered.
 
-> Beyond the eleven cases required by Conformance.md §3. Added together with
+> Beyond the thirteen cases required by Conformance.md §4. Added together with
 > the clarification to Standard.md §7 that resolves a conflict between it and
 > Verification.md §7 — see vectors/README.md, "Ambiguities this suite closed".
 

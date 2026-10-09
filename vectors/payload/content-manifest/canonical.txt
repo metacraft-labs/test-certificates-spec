@@ -1,0 +1,18 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-unit"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+
+[certificate.vcs]
+repo = "example"
+content = "manifest-v1-sha256:22fcef71cdff4fffd4498f6ae08ab6c1f3f3c8b632701c7f2970a3bdbb991391"
+untracked = false
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-unit"]

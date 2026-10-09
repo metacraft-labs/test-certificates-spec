@@ -9,7 +9,7 @@ answer from *we could tell, and it is not covered*.
 | Unverifiable MUST NOT be reported as not-covered | Verification.md §7 |
 | A consumer MAY treat unverifiable as failure for gating, provided it still *reports* it distinctly | Verification.md §7 |
 
-The certificate here is fine. It is authentic-looking, current, clean, on the
+The certificate here is fine. It is authentic-looking, matches the content, is on the
 right platform, covering both required targets. The consumer simply cannot
 determine whether its signer is trusted, because the store it would consult is
 unreadable.

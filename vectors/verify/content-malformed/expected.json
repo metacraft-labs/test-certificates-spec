@@ -1,0 +1,32 @@
+{
+  "outcome": "not-covered",
+  "reason": "every candidate carries a malformed content id; each is decidably invalid and none may be repaired into the id it was probably meant to be",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "a-uppercase.toml",
+      "why": "malformed content id: digest is not lowercase hex"
+    },
+    {
+      "certificate": "b-abbreviated.toml",
+      "why": "malformed content id: a git-tree-sha1 digest is 40 hex digits, not 12"
+    },
+    {
+      "certificate": "c-no-algorithm.toml",
+      "why": "malformed content id: no ':' separating algorithm and digest"
+    },
+    {
+      "certificate": "d-second-colon.toml",
+      "why": "malformed content id: the algorithm ends at the first ':', so the digest 'sha1:9f8e…' is not hex"
+    }
+  ]
+}

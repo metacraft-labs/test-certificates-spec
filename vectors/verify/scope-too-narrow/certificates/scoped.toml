@@ -12,9 +12,8 @@ key_id = "example-key-2026-q2"
 
 [certificate.vcs]
 repo = "example"
-commit = "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4"
 paths = ["src/db-backend"]
-clean = true
+content = "git-tree-sha1:3c1f5e0a9b8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e"
 untracked = false
 
 [[certificate.command]]
@@ -22,4 +21,4 @@ argv = ["example-test", "run", "--targets", "t-integration,t-unit"]
 
 [certificate.signature]
 algorithm = "ed25519"
-value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEAM/XNemWegkrIwhOTqrUsbUnHMxxBXEZy9D5dyAMVzMT/KMoUyfVHvDNd0e9G12cYIzwdOCJ5SgmN8Hm+Bxi8J"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAED2cw3OJggGG9NwODEhlsLmfi5UrI4oO0/RG6By1o/3IfOGpJPaR/GbkmNFwQM7viNziUFXznpaSg+umWiUI7kB"

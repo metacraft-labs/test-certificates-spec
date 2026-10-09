@@ -1,0 +1,17 @@
+[
+  {
+    "path": "a0",
+    "mode": "100644",
+    "content_b64": "YTAK"
+  },
+  {
+    "path": "a/b",
+    "mode": "100644",
+    "content_b64": "YS9iCg=="
+  },
+  {
+    "path": "a.b",
+    "mode": "100644",
+    "content_b64": "YS5iCg=="
+  }
+]

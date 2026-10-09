@@ -10,7 +10,7 @@ though the record looks irrelevant.
 | Relevance is a schema-dependent judgement, so it is undecidable for an uninterpretable record and MUST be assumed | Verification.md §7.1, "Potential relevance is only assessable for a record you can interpret" |
 | An unimplemented schema version is unverifiable, not invalid | Verification.md §7, Standard.md §7 |
 
-Beyond the required set (Conformance.md §3): added with the Verification.md
+Beyond the required set (Conformance.md §4): added with the Verification.md
 §7.1 relevance rule it defends.
 
 The requirement asks for `t-integration` and `t-unit` on `linux/amd64`. The one

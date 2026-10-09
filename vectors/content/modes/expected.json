@@ -1,0 +1,12 @@
+[
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": null,
+    "id": "git-tree-sha1:9f00743e30eada3100e2a3494493dfb7c398fa60"
+  },
+  {
+    "algorithm": "manifest-v1-sha256",
+    "paths": null,
+    "id": "manifest-v1-sha256:1f03dedc74d53af945a80403c4b4765fa204d0d3b2ed448a44fefed64ff1017a"
+  }
+]

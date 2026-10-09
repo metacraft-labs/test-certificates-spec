@@ -12,20 +12,12 @@
         "pins": "an empty argument survives as `\"\"`."
       },
       {
-        "name": "clean-no-worktree",
-        "pins": "worktree shape 3 of 4 — absent, and required to be absent; plus `untracked` moving independently of `clean`."
+        "name": "base-present",
+        "pins": "`base`, when present, is the **last** key of `[certificate.vcs]`, after `untracked`, and is covered by the signature like everything else."
       },
       {
-        "name": "dirty-patch-only",
-        "pins": "worktree shape 2 of 4 — the portable fallback, with no `tree`."
-      },
-      {
-        "name": "dirty-tree",
-        "pins": "worktree shape 1 of 4 — `tree` alone."
-      },
-      {
-        "name": "dirty-tree-and-patch",
-        "pins": "worktree shape 4 of 4 — all three keys, in the fixed order."
+        "name": "content-manifest",
+        "pins": "`content` is emitted **verbatim**, whatever its algorithm — here `manifest-v1-sha256`, the non-git one — and `base` is absent."
       },
       {
         "name": "escapes",
@@ -45,7 +37,7 @@
       },
       {
         "name": "scoped",
-        "pins": "`paths` is present, sorted, deduplicated, and sits between `commit` and `clean`."
+        "pins": "`paths` is present, sorted, deduplicated, and sits between `repo` and `content`."
       },
       {
         "name": "signed",
@@ -70,6 +62,10 @@
       {
         "name": "unscoped",
         "pins": "an empty scope is a whole-repository claim, and is omitted from the payload entirely."
+      },
+      {
+        "name": "untracked-true",
+        "pins": "`untracked = true` is emitted as a bare TOML boolean, and moves independently of `content`."
       }
     ],
     "signature": [
@@ -98,22 +94,60 @@
         "pins": "domain separation is applied, not ignored. **This vector MUST fail.**"
       }
     ],
+    "content": [
+      {
+        "name": "byte-order",
+        "pins": "`manifest-v1` sorts by the raw bytes of the **full path**, so `a.b` precedes `a/b`, which precedes `a0`."
+      },
+      {
+        "name": "empty-scope",
+        "pins": "a scope matching no tracked entry has a well-defined id — the empty tree, or the digest of no records — and `src/d` matches nothing although it is a string prefix of `src/db`."
+      },
+      {
+        "name": "modes",
+        "pins": "all four entry kinds — regular file, executable file, symbolic link, nested repository — and what each contributes."
+      },
+      {
+        "name": "non-ascii-path",
+        "pins": "a path is the byte sequence the VCS records — no Unicode normalisation, no case folding — so two names that render identically are two different files."
+      },
+      {
+        "name": "order-independent",
+        "pins": "the entries arrive in no particular order, and the ids do not depend on it."
+      },
+      {
+        "name": "scope-keeps-paths",
+        "pins": "a scoped `git-tree` id keeps **full repository paths** — it is not the id of the subtree at the scoped directory — and the scope `src/db` does not take in `src/dbx`."
+      },
+      {
+        "name": "sha256-object-format",
+        "pins": "`git-tree-sha256` — the same entries as `order-independent`, under git's SHA-256 object format."
+      }
+    ],
     "verify": [
+      {
+        "name": "content-differs",
+        "pins": "the content comparison is an equality test, failing it is an ordinary not-covered — and a `base` equal to the commit under evaluation does not rescue it."
+      },
+      {
+        "name": "content-malformed",
+        "pins": "a malformed content id is **decidably invalid** — rejected, never repaired, and never unverifiable."
+      },
+      {
+        "name": "content-matches-other-base",
+        "pins": "a certificate is matched by **content**, never by commit — one whose `base` is not the commit under evaluation, but whose `content` matches, covers it."
+      },
+      {
+        "name": "content-unknown-algorithm",
+        "pins": "an algorithm the consumer cannot compute is **not a mismatch** — the record is unevaluated and the outcome is unverifiable."
+      },
       {
         "name": "coverage-union",
         "pins": "required coverage is the **union** of several certificates, not a property any single one has to satisfy."
       },
       {
-        "name": "dirty-no-worktree",
-        "pins": "a dirty certificate with no `worktree` is malformed, and malformed is decidably invalid — not unverifiable."
-      },
-      {
-        "name": "dirty-tree-differs",
-        "pins": "the content comparison is an equality test, and failing it is an ordinary not-covered."
-      },
-      {
-        "name": "dirty-tree-matches",
-        "pins": "a modified-worktree claim is matched by **content**, not by commit identity."
+        "name": "earlier-draft-record",
+        "pins": "a record in the pre-2026-10-09 shape — `commit`, `clean`, no `content` — is **decidably invalid**: not covered, never unverifiable, and never translated."
       },
       {
         "name": "empty-key-store",

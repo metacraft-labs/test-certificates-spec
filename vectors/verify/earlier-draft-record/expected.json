@@ -1,0 +1,20 @@
+{
+  "outcome": "not-covered",
+  "reason": "the only candidate is in the earlier-draft shape: it lacks the required content field, so it is decidably invalid, and it is not translated into the current shape",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "earlier-draft.toml",
+      "why": "malformed: vcs.content is required"
+    }
+  ]
+}

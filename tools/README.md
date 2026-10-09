@@ -15,11 +15,12 @@ the thing this repository exists to replace.
 | Tool | What it is for |
 | ---- | -------------- |
 | `reference_serializer.py` | Canonical payload from a `fields.json`, written against Canonical-Payload.md. Checks the hand-derived bytes in `vectors/payload/*/canonical.txt`. |
+| `reference_content_id.py` | The three Content-Id.md algorithms from a list of entries, in plain Python. The `git-tree-*` ids are built from git's object format by hand, never by asking git. Checks `vectors/content/*/expected.json`. |
 | `reference_verifier.py` | The generic half of Verification.md — framework filtering, authenticity, VCS/platform/scope, coverage as a union — producing the three-valued outcome. |
 | `ssh_sig.py` | Thin wrapper over `ssh-keygen -Y sign` / `-Y verify`, and the armor ⇄ base64 conversion. |
 | `regenerate.py` | Re-derives every signature and rebuilds `vectors/index.json`. Idempotent; `--check` fails if anything would change. |
 | `check.py` | Runs the reference tools over the whole suite. |
-| `walk-vectors.sh` | Walks all three groups with **POSIX shell, `jq` and `ssh-keygen` only**. |
+| `walk-vectors.sh` | Walks all four groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
 | `corruption-demo.sh` | Damages one byte at a time and asserts the checks go red. |
 
 ## Running them
@@ -32,8 +33,9 @@ sh tools/corruption-demo.sh        # prove the suite detects its own corruption
 python3 tools/regenerate.py --check
 ```
 
-Requirements: Python 3.11+ (for `tomllib`), `jq`, and OpenSSH 8.0+ (for
-`ssh-keygen -Y`). Nothing else, and no packages.
+Requirements: Python 3.11+ (for `tomllib`), `jq` 1.6+ (for `@base64d` and
+`--rawfile`), OpenSSH 8.0+ (for `ssh-keygen -Y`), git 2.29+ (for
+`--object-format=sha256`) and `sha256sum`. Nothing else, and no packages.
 
 ## Why the payload bytes are checked and not generated
 
@@ -48,6 +50,16 @@ the serializer becomes a requirement. Checking a hand-derived byte sequence
 against two independent serializers is a real test of the prose, and it has
 already caught disagreements — see the "Ambiguities this suite closed" table in
 [`vectors/README.md`](../vectors/README.md).
+
+The content ids follow the same discipline with different roles. The
+`git-tree-*` ids in `vectors/content/*/expected.json` were derived with git
+itself — objects written with `git hash-object -w`, staged with
+`git update-index --index-info`, and the scoped ids built with the Content-Id.md
+§4.1 recipe verbatim. The `manifest-v1-sha256` ids were derived twice, once in
+Python and once with `printf` and `sha256sum`, and agreed.
+`reference_content_id.py` then checks all of them without git, by building the
+objects by hand, and `walk-vectors.sh` re-derives them with git and
+`sha256sum`. Nothing generates `expected.json` from the code that checks it.
 
 Signatures are the exception. They cannot be authored by hand, so
 `regenerate.py` produces them — deterministically, so re-running it over

@@ -70,13 +70,13 @@ SIGNATURE_VECTORS = {
                       sign_ns=ssh_sig.NAMESPACE,
                       verify_key="insecure-test-key", mutate=None,
                       expect="fail"),
-    # One hex digit of the commit id, changed after signing: still a
-    # well-formed certificate, pointing at a different commit.
+    # One hex digit of the content id, changed after signing: still a
+    # well-formed certificate, attesting to different content.
     "mutated-payload": dict(
         payload_from="minimal", sign_key="insecure-test-key",
         sign_ns=ssh_sig.NAMESPACE, verify_key="insecure-test-key",
-        mutate=(b"a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4",
-                b"a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c5"),
+        mutate=(b"git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766",
+                b"git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887767"),
         expect="fail"),
 }
 
@@ -150,7 +150,8 @@ def resign_certificates(w: Writer) -> None:
     The certificate file itself is the source: its payload is reconstructed
     from the parsed fields (Canonical-Payload.md §5), signed, and written back
     with a fresh signature block. Certificates without a `key_id` are left
-    exactly as authored — that includes the deliberately malformed ones.
+    exactly as authored — that includes the deliberately malformed ones and
+    the earlier-draft record, which has no payload under this revision.
     """
     root = os.path.join(VECTORS, "verify")
     for case in sorted(os.listdir(root)):
@@ -189,7 +190,7 @@ def rebuild_index(w: Writer) -> None:
         "namespace": ssh_sig.NAMESPACE,
         "groups": {},
     }
-    for group in ("payload", "signature", "verify"):
+    for group in ("payload", "signature", "content", "verify"):
         cases = []
         for name in sorted(os.listdir(os.path.join(VECTORS, group))):
             d = os.path.join(VECTORS, group, name)

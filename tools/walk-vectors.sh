@@ -1,5 +1,6 @@
 #!/bin/sh
-# Walk the whole vector suite with nothing but POSIX shell, jq and ssh-keygen.
+# Walk the whole vector suite with nothing but POSIX shell, jq, ssh-keygen,
+# git and sha256sum.
 #
 # NON-NORMATIVE, and a DEMONSTRATION rather than a harness. See tools/README.md.
 # No implementation of the standard is expected to invoke this script; each one
@@ -14,8 +15,13 @@
 # hand-derived bytes in vectors/payload/*/canonical.txt, three independent
 # derivations agree.
 #
+# Likewise for content ids: tools/reference_content_id.py builds git objects
+# by hand in Python, while the content group below asks git itself (the
+# Content-Id.md §4.1 recipe, verbatim) and derives manifest-v1 with printf and
+# sha256sum.
+#
 # Usage:
-#   sh tools/walk-vectors.sh                    # all three groups
+#   sh tools/walk-vectors.sh                    # all four groups
 #   sh tools/walk-vectors.sh payload signature  # selected groups
 #
 # Exit status is 0 when every case behaved as its vector says.
@@ -58,7 +64,6 @@ def b: if . then "true" else "false" end;
 . as $f
 | $f.certificate as $c
 | $c.vcs as $v
-| ($v.worktree // {}) as $w
 | [ "schema = " + ($f.schema | q),
     "",
     "[certificate]",
@@ -73,21 +78,15 @@ def b: if . then "true" else "false" end;
 + (if $c.key_id == null then [] else [ "key_id = " + ($c.key_id | q) ] end)
 + [ "",
     "[certificate.vcs]",
-    "repo = "   + ($v.repo   | q),
-    "commit = " + ($v.commit | q) ]
+    "repo = " + ($v.repo | q) ]
   # §2 rule 8: an empty scope is a whole-repository claim; the key is dropped.
 + (if (($v.paths // []) | length) == 0 then []
    else [ "paths = " + ($v.paths | unique | arr) ] end)
-+ [ "clean = "     + ($v.clean     | b),
+  # §2 rule 9: content verbatim. Rule 4: untracked is a bare boolean.
++ [ "content = "   + ($v.content   | q),
     "untracked = " + ($v.untracked | b) ]
-  # §2 rule 9: present only when clean = false; absent keys are omitted.
-+ (if ($w | length) == 0 then []
-   else [ "", "[certificate.vcs.worktree]" ]
-      + (if $w.tree == null then [] else [ "tree = " + ($w.tree | q) ] end)
-      + (if $w.format == null then [] else [ "format = " + ($w.format | q) ] end)
-      + (if $w.patch_digest == null then []
-         else [ "patch_digest = " + ($w.patch_digest | q) ] end)
-   end)
+  # §2 rule 10: base is last, and omitted entirely when absent.
++ (if $v.base == null then [] else [ "base = " + ($v.base | q) ] end)
   # §2 rules 6 and 7: execution order, one blank line each, argv untouched.
 + ($c.command | map([ "", "[[certificate.command]]", "argv = " + (.argv | arr) ])
               | add)
@@ -174,7 +173,117 @@ walk_signature() {
 }
 
 # ---------------------------------------------------------------------------
-# Group 3: verification decisions
+# Group 3: content ids
+#
+# git-tree ids come from git: every entry is written as an object with
+# `git hash-object -w`, staged into a scratch index with
+# `git update-index --index-info`, and the tree is `git write-tree`. A scoped
+# id follows Content-Id.md §4.1 to the letter. manifest-v1 is printf and
+# sha256sum.
+#
+# Contents are decoded with jq's @base64d, which yields a string, so this
+# walker can only handle entries whose content is valid UTF-8 without NUL.
+# Every entry in the suite is. A walker in a real language has no such limit.
+# ---------------------------------------------------------------------------
+tab=$(printf '\t')
+
+# jq: the entries in scope, as "index<TAB>mode<TAB>path", in byte order.
+# jq compares strings by their UTF-8 bytes, the order Content-Id.md §4.2 needs.
+cat > "$tmp/inscope.jq" <<'JQ'
+($scope[0]) as $s
+| to_entries
+| map(select(.value.path as $p
+             | ($s == null) or (($s | length) == 0)
+               or any($s[]; . as $x | $p == $x or ($p | startswith($x + "/")))))
+| sort_by(.value.path)
+| .[]
+| "\(.key)\t\(.value.mode)\t\(.value.path)"
+JQ
+
+manifest_id() { # <case dir> -> manifest-v1-sha256 digest
+  jq -r --slurpfile scope "$tmp/scope.json" -f "$tmp/inscope.jq" \
+     "$1/entries.json" > "$tmp/inscope"
+  : > "$tmp/records"
+  while IFS="$tab" read -r idx mode path; do
+    hex=$(sha256sum < "$tmp/blob.$idx" | cut -d' ' -f1)
+    printf '%s %s %s\0' "$mode" "$hex" "$path" >> "$tmp/records"
+  done < "$tmp/inscope"
+  sha256sum < "$tmp/records" | cut -d' ' -f1
+}
+
+git_tree_id() { # <case dir> <object format> -> tree id
+  repo=$tmp/repo
+  rm -rf "$repo" "$tmp/index" "$tmp/scoped-index"
+  git init -q --object-format="$2" "$repo"
+  jq -r --slurpfile scope "$tmp/null.json" -f "$tmp/inscope.jq" \
+     "$1/entries.json" > "$tmp/all"
+  : > "$tmp/index-info"
+  while IFS="$tab" read -r idx mode path; do
+    if [ "$mode" = 160000 ]; then
+      oid=$(cat "$tmp/blob.$idx")   # a gitlink records the revision itself
+    else
+      oid=$(git -C "$repo" hash-object -w --stdin < "$tmp/blob.$idx")
+    fi
+    printf '%s %s\t%s\0' "$mode" "$oid" "$path" >> "$tmp/index-info"
+  done < "$tmp/all"
+  GIT_INDEX_FILE=$tmp/index git -C "$repo" update-index -z --index-info \
+    < "$tmp/index-info"
+  T=$(GIT_INDEX_FILE=$tmp/index git -C "$repo" write-tree)
+  if [ "$(jq 'length' "$tmp/scope.json")" = 0 ] \
+     || [ "$(jq -c '.' "$tmp/scope.json")" = null ]; then
+    printf '%s\n' "$T"
+    return
+  fi
+  set --
+  while IFS= read -r p; do set -- "$@" "$p"; done <<EOF
+$(jq -r '.[]' "$tmp/scope.json")
+EOF
+  GIT_INDEX_FILE=$tmp/scoped-index git -C "$repo" read-tree --empty
+  git -C "$repo" --literal-pathspecs ls-tree -r -z --full-tree "$T" -- "$@" \
+    | GIT_INDEX_FILE=$tmp/scoped-index git -C "$repo" update-index -z \
+        --index-info
+  GIT_INDEX_FILE=$tmp/scoped-index git -C "$repo" write-tree
+}
+
+walk_content() {
+  printf 'content: compute each id with git and sha256sum, compare\n'
+  printf 'null\n' > "$tmp/null.json"
+  for d in "$vectors"/content/*/; do
+    d=${d%/}
+    name=$(basename "$d")
+    n=$(jq length "$d/entries.json")
+    i=0
+    while [ "$i" -lt "$n" ]; do
+      jq -j --argjson i "$i" '.[$i].content_b64 | @base64d' \
+         "$d/entries.json" > "$tmp/blob.$i"
+      i=$((i + 1))
+    done
+    count=$(jq length "$d/expected.json")
+    k=0
+    while [ "$k" -lt "$count" ]; do
+      alg=$(jq -r --argjson k "$k" '.[$k].algorithm' "$d/expected.json")
+      want=$(jq -r --argjson k "$k" '.[$k].id' "$d/expected.json")
+      jq -c --argjson k "$k" '.[$k].paths' "$d/expected.json" \
+        > "$tmp/scope.json"
+      label="content/$name $alg $(cat "$tmp/scope.json")"
+      case "$alg" in
+        manifest-v1-sha256) got=$alg:$(manifest_id "$d");;
+        git-tree-sha1)      got=$alg:$(git_tree_id "$d" sha1);;
+        git-tree-sha256)    got=$alg:$(git_tree_id "$d" sha256);;
+        *)                  got="(unknown algorithm)";;
+      esac
+      if [ "$got" = "$want" ]; then
+        ok "$label"
+      else
+        bad "$label" "got $got"
+      fi
+      k=$((k + 1))
+    done
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Group 4: verification decisions
 #
 # The certificates are in canonical form, which is line-oriented and has one
 # `key = value` per line, so `sed` is enough to read them here. A real verifier
@@ -237,8 +346,6 @@ decide() { # <case dir> -> prints the outcome
   store=$case_dir/registered-keys.toml
 
   s_repo=$(jq -r .repo "$st")
-  s_commit=$(jq -r .commit "$st")
-  s_tree=$(jq -r '.tree // ""' "$st")
   r_framework=$(jq -r .framework "$rq")
   r_signature=$(jq -r .require_signature "$rq")
   jq -r '.frameworks_implemented[]' "$rq" > "$tmp/implemented"
@@ -272,26 +379,10 @@ decide() { # <case dir> -> prints the outcome
     [ "$(tval "$cert" result)" = passed ] || continue
     [ "$(tval "$cert" repo)" = "$s_repo" ] || continue
 
-    if [ "$(tbool "$cert" clean)" = true ]; then
-      [ "$(tval "$cert" commit)" = "$s_commit" ] || continue
-    else
-      if ! grep -qx '\[certificate.vcs.worktree\]' "$cert"; then
-        continue            # malformed: identifies no state (Standard §3.2.2)
-      fi
-      tree=$(tval "$cert" tree)
-      if [ -n "$tree" ]; then
-        # Content comparison, so it holds across commit metadata (§4.1.1).
-        [ "$tree" = "$s_tree" ] || continue
-      else
-        # patch_digest only, in a format this consumer cannot reproduce
-        # (§4.1.1). Interpretable, so §7.1 lets us ask if it could have mattered.
-        if could_satisfy "$cert"; then blocking=1; fi
-        continue
-      fi
-    fi
-
     # Scope (§4.1.2). A certificate with no `paths` covers everything; a
     # scoped one covers a required path only if that path is inside its scope.
+    # Decidable from the record alone, so it precedes the content match.
+    : > "$tmp/cert_paths"
     if grep -q '^paths = ' "$cert"; then
       tlist "$cert" paths > "$tmp/cert_paths"
       [ -s "$tmp/req_paths" ] || continue      # whole repository required
@@ -306,6 +397,39 @@ decide() { # <case dir> -> prints the outcome
       done < "$tmp/req_paths"
       [ "$uncovered" = 0 ] || continue
     fi
+
+    # Content (§4.1.1). `base` is never looked at. The form is checked first,
+    # and a malformed id is decidably invalid -- never lowercased, never
+    # matched as an abbreviation, never assumed to be git-tree-sha1.
+    cid=$(tval "$cert" content)
+    [ -n "$cid" ] || continue                  # no content: an earlier draft
+    case "$cid" in *:*) ;; *) continue;; esac  # no algorithm
+    alg=${cid%%:*}                             # up to the FIRST ':'
+    dig=${cid#*:}
+    [ -n "$alg" ] || continue
+    case "$dig" in ''|*[!0123456789abcdef]*) continue;; esac
+    case "$alg" in
+      git-tree-sha1) [ "${#dig}" -eq 40 ] || continue;;
+      git-tree-sha256|manifest-v1-sha256) [ "${#dig}" -eq 64 ] || continue;;
+    esac
+    # An algorithm state.json does not list is one this consumer cannot
+    # compute: not a mismatch, but an evaluation breakdown. The record is
+    # interpretable, so §7.1 lets us ask whether it could have mattered.
+    if ! jq -e --arg a "$alg" 'any(.content[]; .algorithm == $a)' "$st" \
+         > /dev/null; then
+      if could_satisfy "$cert"; then blocking=1; fi
+      continue
+    fi
+    want_id=$(jq -r --arg a "$alg" --rawfile p "$tmp/cert_paths" '
+        ($p | split("\n") | map(select(. != "")) | unique) as $scope
+        | [ .content[]
+            | select(.algorithm == $a and ((.paths // []) | unique) == $scope)
+            | .id ][0] // ""' "$st")
+    if [ -z "$want_id" ]; then
+      printf 'vector-error: state.json lists %s but not this scope\n' "$alg"
+      return
+    fi
+    [ "$cid" = "$want_id" ] || continue
 
     # Authenticity (§3).
     if [ "$r_signature" = true ]; then
@@ -378,11 +502,12 @@ walk_verify() {
 }
 
 # ---------------------------------------------------------------------------
-groups=${*:-"payload signature verify"}
+groups=${*:-"payload signature content verify"}
 for g in $groups; do
   case "$g" in
     payload)   walk_payload;;
     signature) walk_signature;;
+    content)   walk_content;;
     verify)    walk_verify;;
     *) printf 'unknown group: %s\n' "$g" >&2; exit 2;;
   esac

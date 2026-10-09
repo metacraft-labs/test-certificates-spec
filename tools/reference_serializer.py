@@ -44,8 +44,7 @@ _ESCAPES = {
 # input so that a mis-ordered fields.json cannot smuggle a different order out.
 _CERT_KEYS = ("framework", "project", "platform", "targets", "result",
               "issued_at", "issuer", "key_id")
-_VCS_KEYS = ("repo", "commit", "paths", "clean", "untracked")
-_WORKTREE_KEYS = ("tree", "format", "patch_digest")
+_VCS_KEYS = ("repo", "paths", "content", "untracked", "base")
 
 
 class NotCanonical(ValueError):
@@ -157,39 +156,33 @@ def serialize(fields: dict) -> bytes:
                              f"(Standard.md §3.2.1)")
                 lines.append(f"paths = {_array(sort_dedup(paths))}")
             continue
+        if key == "base":
+            # §2 rule 10: optional, omitted entirely when absent, never
+            # emitted empty (Standard.md §3.2.3), and last in the table.
+            if "base" in vcs:
+                _require(isinstance(vcs["base"], str) and vcs["base"] != "",
+                         "vcs.base must be omitted, not emitted empty "
+                         "(Standard.md §3.2.3)")
+                lines.append(f"base = {escape(vcs['base'])}")
+            continue
         _require(key in vcs, f"vcs.{key} is required (Standard.md §3.2)")
         value = vcs[key]
-        if key in ("clean", "untracked"):
+        if key == "untracked":
             _require(isinstance(value, bool),
-                     f"vcs.{key} must be a boolean (§2 rule 4)")
-            lines.append(f"{key} = {'true' if value else 'false'}")
+                     "vcs.untracked must be a boolean (§2 rule 4)")
+            lines.append(f"untracked = {'true' if value else 'false'}")
         else:
+            # `content` is emitted verbatim (§2 rule 9): not split, re-cased
+            # or validated here. A malformed content id is the verifier's
+            # finding; rewriting it would sign a value nobody computed.
             _require(isinstance(value, str), f"vcs.{key} must be a string")
             lines.append(f"{key} = {escape(value)}")
-
-    worktree = vcs.get("worktree")
-    if vcs["clean"]:
-        _require(worktree is None,
-                 "worktree MUST be absent when clean = true "
-                 "(Standard.md §3.2.2)")
-    else:
-        _require(isinstance(worktree, dict),
-                 "worktree is REQUIRED when clean = false; a dirty "
-                 "certificate without it identifies no state "
-                 "(Standard.md §3.2.2)")
-        _require("tree" in worktree or "patch_digest" in worktree,
-                 "at least one of tree and patch_digest MUST be present")
-        _require("patch_digest" not in worktree or "format" in worktree,
-                 "format is REQUIRED when patch_digest is present")
-        lines += ["", "[certificate.vcs.worktree]"]
-        for key in _WORKTREE_KEYS:
-            if key not in worktree:
-                continue  # §2 rule 9: absent keys are omitted, not emptied
-            value = worktree[key]
-            _require(isinstance(value, str), f"worktree.{key} must be a string")
-            lines.append(f"{key} = {escape(value)}")
-        for key in worktree:
-            _require(key in _WORKTREE_KEYS, f"unknown worktree key {key!r}")
+    for key in vcs:
+        # An earlier-draft record has already failed above, on the missing
+        # `content`. Its `commit`, `clean` and `worktree` would land here
+        # otherwise: dropping them silently would sign a payload the
+        # producer never computed (Canonical-Payload.md §7.1).
+        _require(key in _VCS_KEYS, f"unknown vcs key {key!r}")
 
     commands = cert.get("command")
     _require(isinstance(commands, list) and len(commands) >= 1,
@@ -236,15 +229,11 @@ def fields_from_document(doc: dict) -> dict:
             out_cert[key] = cert[key]
     vcs = cert.get("vcs")
     _require(isinstance(vcs, dict), "[certificate.vcs] is required")
-    out_vcs: dict[str, Any] = {}
-    for key in _VCS_KEYS:
-        if key in vcs:
-            out_vcs[key] = vcs[key]
-    if isinstance(vcs.get("worktree"), dict):
-        out_vcs["worktree"] = {k: vcs["worktree"][k]
-                               for k in _WORKTREE_KEYS
-                               if k in vcs["worktree"]}
-    out_cert["vcs"] = out_vcs
+    # Every key is carried across, known or not: an unknown one makes
+    # serialize() refuse, which is how an earlier-draft record (`commit`,
+    # `clean`, no `content`) comes to be rejected rather than quietly
+    # translated (Canonical-Payload.md §7.1).
+    out_cert["vcs"] = dict(vcs)
     commands = cert.get("command")
     _require(isinstance(commands, list), "[[certificate.command]] is required")
     out_cert["command"] = [{"argv": e["argv"]} for e in commands]

@@ -14,6 +14,9 @@ Groups:
     payload    every canonical.txt is byte-exact under the reference
                serializer, and every `received.toml` parses to the same bytes
     signature  every vector verifies or fails exactly as expect.txt says
+    content    every content id in expected.json is reproduced from
+               entries.json by the reference content-id implementation, which
+               builds git objects by hand rather than asking git
     verify     every vector yields its expected three-valued outcome, and the
                gaps it names
     index      vectors/index.json matches what is on disk
@@ -21,13 +24,16 @@ Groups:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
 import tomllib
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import reference_content_id as cid  # noqa: E402
 import reference_serializer as rs  # noqa: E402
 import reference_verifier as rv  # noqa: E402
 import ssh_sig  # noqa: E402
@@ -41,13 +47,17 @@ REQUIRED_PAYLOAD = [
     "minimal", "signed", "targets-unsorted-input", "targets-duplicates",
     "targets-single", "targets-unicode", "escapes", "non-ascii-literal",
     "multiple-commands", "argv-duplicates", "argv-empty-string", "scoped",
-    "unscoped", "dirty-tree", "dirty-patch-only", "clean-no-worktree",
+    "unscoped", "base-present", "content-manifest", "untracked-true",
+]
+REQUIRED_CONTENT = [
+    "order-independent", "byte-order", "modes", "scope-keeps-paths",
+    "empty-scope", "non-ascii-path", "sha256-object-format",
 ]
 REQUIRED_VERIFY = [
     "coverage-union", "wrong-platform", "other-framework", "revoked-key",
-    "empty-key-store", "unsigned-required", "dirty-tree-matches",
-    "dirty-tree-differs", "dirty-no-worktree", "scope-too-narrow",
-    "unreadable-store",
+    "empty-key-store", "unsigned-required", "content-matches-other-base",
+    "content-differs", "content-malformed", "content-unknown-algorithm",
+    "earlier-draft-record", "scope-too-narrow", "unreadable-store",
 ]
 
 
@@ -75,7 +85,7 @@ def check_payload(r: Results) -> None:
     print("payload: canonical.txt is byte-exact under the reference serializer")
     present = cases("payload")
     missing = [c for c in REQUIRED_PAYLOAD if c not in present]
-    r.check(not missing, "all 16 required cases present",
+    r.check(not missing, f"all {len(REQUIRED_PAYLOAD)} required cases present",
             f"missing: {missing}")
     for name in present:
         d = os.path.join(VECTORS, "payload", name)
@@ -112,6 +122,102 @@ def first_diff(a: bytes, b: bytes) -> int:
         if x != y:
             return i
     return min(len(a), len(b))
+
+
+def check_content(r: Results) -> None:
+    print("content: every content id is reproduced from entries.json")
+    present = cases("content")
+    missing = [c for c in REQUIRED_CONTENT if c not in present]
+    r.check(not missing, f"all {len(REQUIRED_CONTENT)} required cases present",
+            f"missing: {missing}")
+    algorithms = set()
+    for name in present:
+        d = os.path.join(VECTORS, "content", name)
+        entries = cid.load_entries(os.path.join(d, "entries.json"))
+        with open(os.path.join(d, "expected.json"), encoding="utf-8") as f:
+            expected = json.load(f)
+        for e in expected:
+            algorithms.add(e["algorithm"])
+            got = cid.compute(entries, e["algorithm"], e["paths"])
+            scope = "whole repo" if e["paths"] is None else e["paths"]
+            r.check(got == e["id"], f"content/{name} {e['algorithm']} {scope}",
+                    f"got {got}")
+            r.check(cid.parse(e["id"])[0] == e["algorithm"],
+                    f"content/{name} id is well-formed and names its algorithm")
+    r.check(algorithms == set(cid.DIGEST_LENGTH),
+            "every algorithm in Content-Id.md §4 is exercised",
+            f"saw {sorted(algorithms)}")
+    pinned_facts(r)
+
+
+def pinned_facts(r: Results) -> None:
+    """The facts the content cases' pins.md files claim, asserted directly.
+
+    A vector whose expected ids are right but whose stated reason is false
+    teaches the wrong lesson, so the reasons are checked too.
+    """
+    def load(name):
+        return cid.load_entries(os.path.join(VECTORS, "content", name,
+                                             "entries.json"))
+
+    # byte-order: `a.b` < `a/b` < `a0` on raw bytes, which is NOT what a walk
+    # sorting each directory's names alone produces (it reaches `a/b` first).
+    entries = load("byte-order")
+    order = [p for p, _, _ in sorted(entries, key=lambda e: e[0])]
+    r.check(order == [b"a.b", b"a/b", b"a0"],
+            "content/byte-order: a.b sorts before a/b, which sorts before a0",
+            f"{order}")
+    r.check([p for p, _, _ in entries] != order,
+            "content/byte-order: entries.json is not already in byte order")
+
+    # order-independent: same ids whatever order the entries arrive in.
+    entries = load("order-independent")
+    for alg in ("git-tree-sha1", "manifest-v1-sha256"):
+        r.check(cid.compute(entries, alg, None)
+                == cid.compute(list(reversed(entries)), alg, None)
+                == cid.compute(sorted(entries), alg, None),
+                f"content/order-independent: {alg} ignores input order")
+    r.check([p for p, _, _ in entries] != sorted(p for p, _, _ in entries),
+            "content/order-independent: entries.json is out of order")
+
+    # scope-keeps-paths: the scoped id is not the id of the subtree object,
+    # and `src/db` does not take in `src/dbx`.
+    entries = load("scope-keeps-paths")
+    scoped = cid.compute(entries, "git-tree-sha1", ["src/db"])
+    sub = [(p[len(b"src/db/"):], m, c) for p, m, c in entries
+           if p.startswith(b"src/db/")]
+    subtree = "git-tree-sha1:" + cid.git_tree(sub, "sha1")
+    r.check(scoped != subtree,
+            "content/scope-keeps-paths: scoped id is not the subtree id")
+    r.check(scoped != cid.compute(entries, "git-tree-sha1", ["lib/db"]),
+            "content/scope-keeps-paths: identical subtrees at different "
+            "paths have different scoped ids")
+    r.check(not any(cid.in_scope(p, ["src/db"]) for p, _, _ in entries
+                    if p.startswith(b"src/dbx/")),
+            "content/scope-keeps-paths: src/db excludes src/dbx")
+
+    # empty-scope: the empty tree, and the digest of no records.
+    entries = load("empty-scope")
+    r.check(cid.compute(entries, "git-tree-sha1", ["src/d"])
+            == "git-tree-sha1:4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            and cid.compute(entries, "manifest-v1-sha256", ["src/d"])
+            == "manifest-v1-sha256:" + hashlib.sha256(b"").hexdigest(),
+            "content/empty-scope: src/d matches nothing, not src/db")
+
+    # non-ascii-path: the precomposed and decomposed names are two files.
+    entries = load("non-ascii-path")
+    r.check(len({unicodedata.normalize("NFC", p.decode()) for p, _, _ in
+                 entries}) < len(entries),
+            "content/non-ascii-path: two paths differ only in normalization")
+
+    # sha256-object-format: same entries as order-independent; the manifest
+    # does not depend on the object format, the git tree id does.
+    with open(os.path.join(VECTORS, "content", "sha256-object-format",
+                           "entries.json"), "rb") as a, \
+         open(os.path.join(VECTORS, "content", "order-independent",
+                           "entries.json"), "rb") as b:
+        r.check(a.read() == b.read(),
+                "content/sha256-object-format uses order-independent's entries")
 
 
 def check_signature(r: Results) -> None:
@@ -172,7 +278,8 @@ def check_verify(r: Results) -> None:
     print("verify: each vector yields its expected three-valued outcome")
     present = cases("verify")
     missing = [c for c in REQUIRED_VERIFY if c not in present]
-    r.check(not missing, "all 11 required cases present", f"missing: {missing}")
+    r.check(not missing, f"all {len(REQUIRED_VERIFY)} required cases present",
+            f"missing: {missing}")
 
     outcomes = set()
     for name in present:
@@ -217,6 +324,17 @@ def check_verify(r: Results) -> None:
                   encoding="utf-8") as f:
             return json.load(f)["outcome"]
 
+    # A malformed content id is decidably invalid; a well-formed one in an
+    # algorithm the consumer cannot compute is not a mismatch (§4.1.1). The
+    # same pair, read the other way, is the one a boolean verifier collapses.
+    malformed = outcome_of("content-malformed")
+    uncomputable = outcome_of("content-unknown-algorithm")
+    r.check(malformed == "not-covered" and uncomputable == "unverifiable",
+            "content-malformed and content-unknown-algorithm do not collapse",
+            f"{malformed} / {uncomputable}")
+    r.check(outcome_of("unknown-schema") == "unverifiable",
+            "content-malformed and unknown-schema do not collapse")
+
     uninterpretable = outcome_of("unknown-schema-off-platform")
     interpretable = outcome_of("unreadable-store-off-platform")
     r.check(uninterpretable == "unverifiable"
@@ -239,7 +357,7 @@ def check_index(r: Results) -> None:
     print("index: vectors/index.json matches the directories on disk")
     with open(os.path.join(VECTORS, "index.json"), encoding="utf-8") as f:
         index = json.load(f)
-    for group in ("payload", "signature", "verify"):
+    for group in ("payload", "signature", "content", "verify"):
         listed = [c["name"] for c in index["groups"][group]]
         r.check(listed == cases(group), f"index lists every {group} case",
                 f"index {listed} vs disk {cases(group)}")
@@ -260,6 +378,11 @@ def check_structure(r: Results) -> None:
                     for f in ("canonical.txt", "key.pub", "signature.b64",
                               "expect.txt", "pins.md")),
                 f"signature/{name} has the five required files")
+    for name in cases("content"):
+        d = os.path.join(VECTORS, "content", name)
+        r.check(all(os.path.exists(os.path.join(d, f))
+                    for f in ("entries.json", "expected.json", "pins.md")),
+                f"content/{name} has entries.json, expected.json, pins.md")
     for name in cases("verify"):
         d = os.path.join(VECTORS, "verify", name)
         r.check(all(os.path.exists(os.path.join(d, f))
@@ -273,6 +396,7 @@ def check_structure(r: Results) -> None:
 GROUPS = {
     "payload": check_payload,
     "signature": check_signature,
+    "content": check_content,
     "verify": check_verify,
     "index": check_index,
     "structure": check_structure,

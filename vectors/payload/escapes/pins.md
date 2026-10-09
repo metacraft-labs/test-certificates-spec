@@ -32,8 +32,9 @@ escaped `/` as `\/` (a JSON habit), escaped `'`, or sorted after escaping.
 
 This case carries an extra, optional file: the same field values written as
 non-canonically as TOML allows. CRLF line endings, aligned `=`, tables and keys
-in a scrambled order, `project` as a TOML *literal* string (where `\` and `"`
-carry no special meaning at all), the `\u0009` and `\u0021` escapes in place of
+in a scrambled order (`untracked` first in `[certificate.vcs]`), `project` and
+`content` as TOML *literal* strings (where `\` and `"` carry no special meaning
+at all), the `\u0009` and `\u0021` escapes in place of
 the characters they denote, `paths = []`, a multi-line `argv` array with a
 trailing comma, and an empty `[certificate.signature]` block.
 

@@ -6,10 +6,10 @@
 # A conformance suite that passes whatever you feed it pins nothing. This
 # script takes a throwaway copy of the repository, damages one thing at a time,
 # and asserts that the checks go red — once for a canonical payload, once for a
-# signature, and once for a signature inside a verification vector, so all
-# three groups are shown to be load-bearing. A fourth flips a record's schema
-# version to show that the §7.1 relevance distinction is load-bearing too,
-# which no amount of signature checking would catch.
+# signature, once for a signature inside a verification vector, and once for an
+# expected content id, so all four groups are shown to be load-bearing. Another
+# flips a record's schema version to show that the §7.1 relevance distinction
+# is load-bearing too, which no amount of signature checking would catch.
 #
 # Every check is run twice per corruption: with the Python reference tools and
 # with the POSIX-shell walker. A corruption caught by only one of them would
@@ -139,6 +139,22 @@ expect_red "reference verifier stops reporting unverifiable" \
 expect_red "shell walker stops reporting unverifiable" \
   sh "$work/tools/walk-vectors.sh" verify
 cp "$work/schema.orig" "$target"
+printf '\n'
+
+# --- 5. one hex digit of an expected content id ----------------------------
+# The id stays well-formed — right algorithm, right length, lowercase — so
+# only recomputing it from entries.json can tell. The Python reference builds
+# the tree object by hand; the shell walker asks git. Both must notice.
+printf '5. one hex digit changed in vectors/content/modes/expected.json\n'
+target=$work/vectors/content/modes/expected.json
+cp "$target" "$work/content.orig"
+corrupt "$target" '9f00743e30eada3100e2a3494493dfb7c398fa60' \
+                  '9f00743e30eada3100e2a3494493dfb7c398fa61'
+expect_red "reference content-id implementation disagrees" \
+  python3 "$work/tools/check.py" content
+expect_red "git, via the shell walker, disagrees" \
+  sh "$work/tools/walk-vectors.sh" content
+cp "$work/content.orig" "$target"
 printf '\n'
 
 printf '%d as expected, %d wrong\n' "$pass" "$fail"

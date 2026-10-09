@@ -1,0 +1,37 @@
+[
+  {
+    "path": "src/db/schema.sql",
+    "mode": "100644",
+    "content_b64": "Q1JFQVRFIFRBQkxFIHQgKGlkIElOVEVHRVIpOwo="
+  },
+  {
+    "path": "src/db/query.c",
+    "mode": "100644",
+    "content_b64": "aW50IHF1ZXJ5KHZvaWQpOwo="
+  },
+  {
+    "path": "lib/db/schema.sql",
+    "mode": "100644",
+    "content_b64": "Q1JFQVRFIFRBQkxFIHQgKGlkIElOVEVHRVIpOwo="
+  },
+  {
+    "path": "lib/db/query.c",
+    "mode": "100644",
+    "content_b64": "aW50IHF1ZXJ5KHZvaWQpOwo="
+  },
+  {
+    "path": "src/dbx/extra.c",
+    "mode": "100644",
+    "content_b64": "aW50IGV4dHJhOwo="
+  },
+  {
+    "path": "src/main.c",
+    "mode": "100644",
+    "content_b64": "aW50IG1haW4odm9pZCk7Cg=="
+  },
+  {
+    "path": "README.md",
+    "mode": "100644",
+    "content_b64": "IyBleGFtcGxlCg=="
+  }
+]

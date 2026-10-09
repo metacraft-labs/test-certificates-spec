@@ -1,0 +1,43 @@
+[
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": null,
+    "id": "git-tree-sha1:442d064fb66487bbe9030420a573b0bcb2149218"
+  },
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": [
+      "src/db"
+    ],
+    "id": "git-tree-sha1:c4e13945e594dc4a56239682ec29f5206935d71f"
+  },
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": [
+      "lib/db"
+    ],
+    "id": "git-tree-sha1:9292a4cf83a04b863e370f1da4e4335fcc3ffec0"
+  },
+  {
+    "algorithm": "git-tree-sha1",
+    "paths": [
+      "README.md",
+      "src/db"
+    ],
+    "id": "git-tree-sha1:54bd65c792c78a37a1696dedd3806cb6b9526054"
+  },
+  {
+    "algorithm": "manifest-v1-sha256",
+    "paths": [
+      "src/db"
+    ],
+    "id": "manifest-v1-sha256:264ad79e2bcdfe3ef8c6f54a3b432898fca7b64f4e26cb02020cf73f95925a89"
+  },
+  {
+    "algorithm": "manifest-v1-sha256",
+    "paths": [
+      "lib/db"
+    ],
+    "id": "manifest-v1-sha256:3d93d6fe7200e1d242f421dd61a163ed4d39e13111a75e0d063ef71bd7d2d008"
+  }
+]

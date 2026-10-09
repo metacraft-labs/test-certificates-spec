@@ -26,6 +26,10 @@ vectors/
     expect.txt                `verify` or `fail`
     pins.md
   signature/keys/           the (published, worthless) signing keys
+  content/<case>/           content ids (Content-Id.md)
+    entries.json              tracked entries, in arbitrary order
+    expected.json             the ids they must produce, per algorithm and scope
+    pins.md
   verify/<case>/            three-valued verification decisions
     state.json                the repository state under evaluation
     requirement.json          what the consumer demands
@@ -70,15 +74,10 @@ can hold the two side by side:
     "key_id": "example-key-2026-q2",
     "vcs": {
       "repo": "example",
-      "commit": "a858633c…",
       "paths": ["src/db-backend"],
-      "clean": false,
+      "content": "git-tree-sha1:3c1f5e0a…",
       "untracked": false,
-      "worktree": {
-        "tree": "9f8e7d6c…",
-        "format": "git-diff --no-renames -U3",
-        "patch_digest": "blake3:4a1b…"
-      }
+      "base": "a858633c…"
     },
     "command": [{"argv": ["example-test", "run"]}]
   }
@@ -89,10 +88,13 @@ The values are **inputs, not canonical output**:
 
 - `targets` and `paths` arrive in whatever order the producer observed them and
   may contain duplicates. Sorting and deduplication are the serializer's job.
-- `key_id`, `paths` and `worktree` are absent when they do not apply. `paths`
+- `key_id`, `paths` and `base` are absent when they do not apply. `paths`
   may also be present and **empty**, which means the same thing as absent
   (Standard.md §3.2.1) and must still produce no `paths` line.
-- Booleans are JSON booleans, and must be emitted as bare TOML booleans.
+- `content` is an opaque string to the serializer, emitted verbatim
+  (Canonical-Payload.md §2 rule 9). Computing it is the content group's
+  business, not this one's.
+- `untracked` is a JSON boolean, and must be emitted as a bare TOML boolean.
 
 `canonical.txt` is the byte sequence a signature covers. It is UTF-8, LF-only,
 BOM-free, has no trailing whitespace on any line, and ends with exactly one
@@ -175,7 +177,51 @@ payload with the same key reproduces the same bytes on any machine:
 python3 tools/regenerate.py --check    # non-zero if any signature would change
 ```
 
-## Group 3: `verify/`
+## Group 3: `content/`
+
+An implementation passes by computing every id in `expected.json` from
+`entries.json` and comparing the strings.
+
+`entries.json` is the set of tracked files, in **arbitrary order**:
+
+```json
+[
+  {"path": "src/main.c", "mode": "100644", "content_b64": "aW50IHJ1bih2b2lkKTsK…"},
+  {"path": "current",    "mode": "120000", "content_b64": "bGliLmM="},
+  {"path": "vendor/dep", "mode": "160000", "content_b64": "M2YyYTljMWU1Yjdk…"}
+]
+```
+
+| Field | Meaning |
+| ----- | ------- |
+| `path` | The repo-relative path, as a JSON string; its UTF-8 encoding is the path's bytes (Content-Id.md §4.2). Never normalise it. |
+| `mode` | One of `100644`, `100755`, `120000`, `160000` (Content-Id.md §4.2). |
+| `content_b64` | Standard base64 of the entry's content: the file's bytes, a symlink's target, or — for `160000` — the nested repository's revision id as ASCII hex. |
+
+`expected.json` lists the ids those entries must produce:
+
+```json
+[
+  {"algorithm": "git-tree-sha1",      "paths": null,     "id": "git-tree-sha1:6904711a…"},
+  {"algorithm": "manifest-v1-sha256", "paths": ["src"],  "id": "manifest-v1-sha256:2c353274…"}
+]
+```
+
+`paths` is the scope, exactly as a certificate's `vcs.paths` would carry it:
+`null` is the whole repository. `id` is the full self-describing content id
+(Content-Id.md §1). An implementation need only compute the algorithms it
+implements, and should say which it skipped; but a producer or verifier that
+implements an algorithm and skips its vectors has tested nothing.
+
+The `git-tree-*` ids are **re-derivable with git**, which is the check that
+they were not fabricated. Write each entry as an object (`git hash-object -w`;
+a `160000` entry is not an object, its revision is used as is), stage them into
+a scratch index with `git update-index -z --index-info`, and `git write-tree`
+— in a repository made with `git init --object-format=sha256` for
+`git-tree-sha256`. A scoped id then follows the recipe in Content-Id.md §4.1
+verbatim. `tools/walk-vectors.sh` does exactly this.
+
+## Group 4: `verify/`
 
 An implementation passes by producing the expected **three-valued** outcome.
 
@@ -185,12 +231,25 @@ An implementation passes by producing the expected **three-valued** outcome.
 {
   "repo": "example",
   "commit": "a858633c…",
-  "tree": "9f8e7d6c…"
+  "content": [
+    {"algorithm": "git-tree-sha1", "paths": null,              "id": "git-tree-sha1:9f8e7d6c…"},
+    {"algorithm": "git-tree-sha1", "paths": ["src/db-backend"], "id": "git-tree-sha1:3c1f5e0a…"}
+  ]
 }
 ```
 
-`tree` is the canonical content id of that state, used to match
-modified-worktree claims (Verification.md §4.1.1).
+| Field | Meaning |
+| ----- | ------- |
+| `commit` | The commit under evaluation. **Informational**: nothing compares a certificate with it (Verification.md §4.1.1), and an implementation that does fails `content-matches-other-base` and `content-differs`. |
+| `content` | The content ids this consumer can compute for the state, per algorithm and per scope — what Content-Id.md §5 would produce. |
+
+An algorithm absent from `content` is one this consumer **cannot compute**: a
+certificate in it is unevaluated, not mismatched (Verification.md §4.1.1).
+Whenever an algorithm is listed, every scope used by a certificate of that
+algorithm in the case is listed too, so a walker never has to compute an id
+itself. Match a certificate by looking up the entry with its algorithm and its
+scope (`paths` sorted and deduplicated; absent, empty and `null` are all the
+whole repository), then comparing `id` with `vcs.content` as strings.
 
 `requirement.json` is what the consumer demands. It is separate from the state
 on purpose: a commit is not "on" a platform, and platforms, targets and
@@ -250,16 +309,17 @@ boolean verifier passes its own tests and looks correct.
 | `not-covered` | **could tell**, and it is not | run the tests |
 | `unverifiable` | **could not tell** | fix the configuration; re-running tests changes nothing |
 
-Three pairs of cases exist precisely to hold the line:
+Four pairs of cases exist precisely to hold the line:
 
 | Pair | Outcomes | Why they differ |
 | ---- | -------- | --------------- |
 | `empty-key-store` vs `unreadable-store` | not-covered vs unverifiable | An empty store *answers*: nobody is trusted, fail-closed. An unreadable store answers nothing. |
-| `dirty-no-worktree` vs `unknown-schema` | not-covered vs unverifiable | A record missing a required v1 field is decidably invalid. A record in a schema version this consumer does not implement may be perfectly good and simply unreadable here. |
+| `content-malformed` vs `unknown-schema` | not-covered vs unverifiable | A record carrying a malformed required v1 field is decidably invalid. A record in a schema version this consumer does not implement may be perfectly good and simply unreadable here. |
+| `content-malformed` vs `content-unknown-algorithm` | not-covered vs unverifiable | A malformed content id is wrong, and the consumer can say so. A well-formed id in an algorithm it cannot compute may match perfectly; the consumer cannot tell. |
 | `unreadable-store-off-platform` vs `unknown-schema-off-platform` | not-covered vs unverifiable | Both carry an unevaluable record that *appears* to be about another platform. Only in the first can the consumer interpret the record, and so actually know the appearance is true (Verification.md §7.1). |
 
-An implementation that returns two values passes neither of the first two
-pairs. The third catches a subtler error that a three-valued implementation can
+An implementation that returns two values passes none of the first three
+pairs. The fourth catches a subtler error that a three-valued implementation can
 still make: treating every record it could not evaluate as decisive, and
 reporting `unverifiable` for a configuration fault that could not have changed
 the verdict.
@@ -273,7 +333,8 @@ identical either way.
 
 Per Conformance.md, a vector is added whenever an ambiguity is found in the
 prose, **in the same change that clarifies the prose**. Authoring this suite
-found these, and the listed documents were changed:
+found these, and the listed documents were changed. The last three were found
+while moving the suite to the 2026-10-09 content binding:
 
 | Ambiguity | Resolution | Vector |
 | --------- | ---------- | ------ |
@@ -283,21 +344,24 @@ found these, and the listed documents were changed:
 | Is `issued_at` a quoted string or a TOML datetime, and is `Z` required over `+00:00`? | A basic string, copied verbatim; `Z` — Canonical-Payload.md §2 | every payload vector |
 | May `targets` or `argv` be empty? | No; at least one each — Canonical-Payload.md §2, §3 | (a rejection case) |
 | How is `signature.value` base64 framed — padding, line wrapping? | RFC 4648 §4, padded, single line — Standard.md §6.1 | every `signature/` vector |
-| Is `format` compared as an opaque string, and how much must it pin? | Opaque, exact equality; must pin every option affecting the patch bytes — Standard.md §3.2.2 | `payload/dirty-patch-only` |
+| Is `format` compared as an opaque string, and how much must it pin? | Opaque, exact equality; must pin every option affecting the patch bytes. *Superseded:* the 2026-10-09 revision removed `format` with the rest of `[certificate.vcs.worktree]` (Canonical-Payload.md §7.1) | (`payload/dirty-patch-only`, removed with it) |
 | Standard.md §7 said a verifier *rejects* an unknown `schema`; Verification.md §7 listed an unimplemented schema version as *unverifiable*. | Unverifiable — Standard.md §7 now defers to Verification.md §7 | `verify/unknown-schema` |
 | Verification.md §3.1 called a missing or empty store fail-closed while §7 called an unreadable store unverifiable, without distinguishing them. | Missing/empty answers the question (not-covered); unreadable does not (unverifiable) — Verification.md §3.1 | `verify/empty-key-store`, `verify/unreadable-store` |
 | Which outcome wins when one certificate cannot be evaluated and others cover the requirement? | Covered, with the unevaluated record still reported — Verification.md §7 | `verify/unverifiable-but-covered` |
 | Does an unevaluable record that looks irrelevant still force `unverifiable`? §7.1 said "anything that could have changed the answer" without saying who may judge that. | Only a record you can **interpret** can be judged irrelevant; an uninterpretable one is potentially relevant by default — Verification.md §7.1 | `verify/unknown-schema-off-platform`, `verify/unreadable-store-off-platform` |
-| Where does the *requirement* live in a verification vector? Conformance.md §3 put `platform` in `state.json` and named no home for targets or signature policy. | A separate `requirement.json` — Conformance.md §3 | every `verify/` vector |
+| Where does the *requirement* live in a verification vector? Conformance.md §3 put `platform` in `state.json` and named no home for targets or signature policy. | A separate `requirement.json` — Conformance.md §4 (then §3) | every `verify/` vector |
+| Where does a content id's algorithm end? Content-Id.md §1 defined the form `<algorithm>:<digest>` without saying which `:` separates them, and `git-tree-sha1:sha1:…` is malformed under one reading and an uncomputable algorithm (unverifiable) under the other. | At the **first** `:` — Content-Id.md §1 | `verify/content-malformed` (`d-second-colon.toml`) |
+| Is a content id naming an algorithm the standard does not define malformed or unverifiable? Content-Id.md §1 listed "an unknown algorithm" among the malformed forms, while Verification.md §4.1.1 listed only the form errors as malformed and called an algorithm the consumer cannot compute unverifiable; and "a digest of the wrong length" cannot be judged for an algorithm that defines no length. | Unverifiable: well-formed, uncomputable, length not judged; producers still MUST NOT emit one — Content-Id.md §1, Verification.md §4.1.1 | `verify/content-unknown-algorithm` (`b-unknown-algorithm.toml`) |
+| Is `manifest-v1`'s path order "not git's tree order"? Content-Id.md §4.2 said so, but git's recursive tree order — which sorts a directory as if its name ended in `/` — *is* full-path byte order: `git ls-tree -r` lists `a.b`, `a/b`, `a0`, exactly as `manifest-v1` does. The order that differs is a walk sorting each directory's names on their own, which emits `a/b` first. | Byte order of the full path, which coincides with git's listing order and differs from a per-directory walk — Content-Id.md §4.2, Conformance.md §3 | `content/byte-order` |
 
 ## Cases beyond the required set
 
-Conformance.md requires 16 payload cases and 11 verification cases. This suite
-adds five, each marked as such in its `pins.md`:
+Conformance.md requires 16 payload cases, 7 content-id cases and 13
+verification cases, and itself lists the four verification cases below that
+arrived with prose clarifications. Each is marked as such in its `pins.md`:
 
 | Case | Why |
 | ---- | --- |
-| `payload/dirty-tree-and-patch` | The fourth worktree shape. `dirty-tree`, `dirty-patch-only` and `clean-no-worktree` cover three; nothing else shows all three worktree keys in their fixed order. |
 | `verify/unknown-schema` | Added with the Standard.md §7 clarification above. |
 | `verify/unverifiable-but-covered` | Added with the Verification.md §7 precedence rule above. |
 | `verify/unknown-schema-off-platform` | Added with the Verification.md §7.1 relevance rule above. |
@@ -311,8 +375,23 @@ Stated so that nobody mistakes a gap for a guarantee:
   in canonical form. Only `payload/escapes/received.toml` exercises
   Canonical-Payload.md §5.
 - **Rejection cases as a group.** Malformed records appear only where a
-  decision depends on them (`verify/dirty-no-worktree`). There is no systematic
-  "these records MUST be rejected" group yet.
+  decision depends on them (`verify/content-malformed`,
+  `verify/earlier-draft-record`). There is no systematic "these records MUST be
+  rejected" group yet.
+- **Producing a content id from a working tree.** The content group starts from
+  a list of tracked entries. What belongs in that list — index entries, not
+  untracked files; working-tree bytes after the VCS's normalisation; refusal on
+  unmerged, `assume-unchanged` or `skip-worktree` entries and modified nested
+  repositories (Content-Id.md §2, §3) — is a property of a live repository and
+  is not exercised. Nor is the before-and-after comparison a producer makes
+  around the run (Standard.md §3.2).
+- **Binary content and NUL in the content group.** Every entry's content is
+  valid UTF-8 text, so that a walker using only `jq` can decode it. Content-Id
+  treats content as bytes, and an implementation must; the vectors do not
+  prove that it does.
+- **Computing the state's content id in the `verify/` group.** `state.json`
+  hands the consumer its ids ready-made; the content group is where computing
+  them is tested.
 - **Framework-specific validity.** By construction: Verification.md §4.2 says
   there is nothing generic to test there.
 - **Transport.** Nothing in [Transport.md](../Transport.md) is covered; the
@@ -320,13 +399,14 @@ Stated so that nobody mistakes a gap for a guarantee:
 
 ## The tools directory is not part of the suite
 
-[`tools/`](../tools) holds a reference serializer, a reference verifier, a
-signature regenerator, a POSIX-shell walker and a corruption demonstration.
+[`tools/`](../tools) holds a reference serializer, a reference content-id
+implementation, a reference verifier, a signature regenerator, a POSIX-shell
+walker and a corruption demonstration.
 They exist so that the vectors themselves can be checked and re-derived.
 
 **No implementation is required to read, port or invoke any of them**, and
 nothing in `tools/` is normative. Where a tool and the prose disagree, the prose
 wins and the tool is a bug. `tools/walk-vectors.sh` is worth a look anyway: it
-walks all three groups with nothing but POSIX shell, `jq` and `ssh-keygen`,
-which is the concrete demonstration that this suite needs no
+walks all four groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git`
+and `sha256sum`, which is the concrete demonstration that this suite needs no
 language-specific tooling.

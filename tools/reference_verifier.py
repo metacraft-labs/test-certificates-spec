@@ -26,6 +26,7 @@ import tomllib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import reference_content_id as cid  # noqa: E402
 import reference_serializer as rs  # noqa: E402
 import ssh_sig  # noqa: E402
 
@@ -103,6 +104,13 @@ def within_scope(required_paths: list[str] | None,
                for r in required_paths)
 
 
+def scope_key(paths: list[str] | None) -> tuple[str, ...]:
+    """A scope in comparable form: absent and empty both mean the whole
+    repository (Standard.md §3.2.1), and order and duplicates are not part of
+    it."""
+    return tuple(sorted(set(paths or []), key=lambda p: p.encode("utf-8")))
+
+
 def could_satisfy(cert: dict, requirement: dict) -> bool:
     """Could this record, if it had verified, have met part of the requirement?
 
@@ -167,34 +175,43 @@ def evaluate(cert_path: str, doc: dict, state: dict, requirement: dict,
         reject(f"vcs.repo {vcs.get('repo')!r} is a different repository")
         return None
 
-    # --- VCS binding (§4.1, §4.1.1) --------------------------------------
-    if vcs.get("clean"):
-        if vcs.get("commit") != state["commit"]:
-            reject("vcs.commit does not equal the commit under evaluation")
-            return None
-    else:
-        worktree = vcs.get("worktree") or {}
-        if "tree" in worktree:
-            # Content comparison, so it holds across commit metadata: the
-            # certificate's own `commit` is only the base it was taken from.
-            if worktree["tree"] != state.get("tree"):
-                reject("worktree.tree does not equal the tree under evaluation")
-                return None
-        else:
-            # patch_digest only. A consumer that cannot reproduce the patch
-            # under the certificate's `format` MUST report the certificate
-            # unverifiable, not invalid (§4.1.1). This reference consumer
-            # reproduces no patch formats at all.
-            # Interpretable, so §7.1 lets us ask whether it could have mattered.
-            unevaluated(
-                f"patch_digest claim in format {worktree.get('format')!r} "
-                f"cannot be reproduced by this consumer",
-                relevant=could_satisfy(cert, requirement))
-            return None
-
+    # --- Scope (§4.1.2) ---------------------------------------------------
+    # Decidable from the record alone, so it comes before the content match:
+    # a certificate too narrow for the requirement is rejected whether or not
+    # its content id could have been computed.
     if not within_scope(requirement.get("paths"), vcs.get("paths")):
         reject(f"vcs.paths scopes the claim to {vcs.get('paths')!r}, narrower "
                f"than what is required")
+        return None
+
+    # --- Content binding (§4.1, §4.1.1) ----------------------------------
+    # `base` is never consulted: comparing it, or any commit id, with the
+    # state under evaluation rejects exactly the certificates the content
+    # binding exists to make valid.
+    try:
+        algorithm, _ = cid.parse(vcs.get("content"))
+    except cid.Malformed as exc:
+        # Decidably invalid, and never repaired: no lowercasing, no prefix
+        # matching of an abbreviated digest, no assumed algorithm.
+        reject(f"malformed content id: {exc}")
+        return None
+    computable = [c for c in state["content"] if c["algorithm"] == algorithm]
+    if not computable:
+        # Not a mismatch: the consumer cannot compute this algorithm for the
+        # state, so it has established nothing (§4.1.1). The record is
+        # interpretable, so §7.1 lets us ask whether it could have mattered.
+        unevaluated(f"content id algorithm {algorithm!r} cannot be computed "
+                    f"by this consumer", relevant=could_satisfy(cert,
+                                                                requirement))
+        return None
+    scope = scope_key(vcs.get("paths"))
+    ours = [c["id"] for c in computable if scope_key(c["paths"]) == scope]
+    if not ours:
+        raise ValueError(f"state.json lists {algorithm} but not for scope "
+                         f"{scope!r}; the vector is incomplete")
+    if vcs["content"] != ours[0]:
+        reject("vcs.content does not equal the content id of the state "
+               "under evaluation")
         return None
 
     # --- Authenticity (§3) -----------------------------------------------

@@ -12,8 +12,7 @@ key_id = "example-key-2026-q2"
 
 [certificate.vcs]
 repo = "example"
-commit = "a858633c1f4d7bb4b7c2e2b6a1c0d9e8f7a6b5c4"
-clean = true
+content = "git-tree-sha1:9f8e7d6c5b4a3928170695e4d3c2b1a099887766"
 untracked = false
 
 [[certificate.command]]
@@ -21,4 +20,4 @@ argv = ["example-test", "bench"]
 
 [certificate.signature]
 algorithm = "ed25519"
-value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBGOz2uCIl7qK7BNijl+TskZQm+4wdnkKvCgl2QOlheRm+54bks6C3GTQznwJ3UIsu1Y3CdSIZCRCejy3aXY5QN"
+value = "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgSa1gu6oa5lWVsehQfeJyRXKh2hWgKxjbzb+im4XAlAsAAAATdGVzdC1jZXJ0aWZpY2F0ZS12MQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEAAeNHpInv8KasENmQP8Azw9u6dRobzwmrvTTJxYhaXZRcktByw8n/c/vCJKpwIY1CX0tATKWNvQDdnTOXkLUgF"

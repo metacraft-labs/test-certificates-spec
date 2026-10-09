@@ -8,7 +8,7 @@
 | Certificates for other platforms MUST NOT contribute to a platform's union | Verification.md §5 |
 | A consumer MUST report *what* is missing, on which platform | Verification.md §5 |
 
-The certificate is authentic, current, clean and complete. It is simply about a
+The certificate is authentic, matches the content under evaluation, and is complete. It is simply about a
 different machine.
 
 **Would be wrong if:** the implementation unioned targets across platforms, or

@@ -11,7 +11,7 @@ of the requirement**. This one cannot, so the outcome is `not-covered`.
 | An unreadable store answers nothing about the certificates it covers | Verification.md §3.1 |
 | The record MUST still be named in the report | Verification.md §7.1 |
 
-Beyond the required set (Conformance.md §3): added with the Verification.md
+Beyond the required set (Conformance.md §4): added with the Verification.md
 §7.1 relevance rule it defends.
 
 The key store is unparseable, exactly as in `unreadable-store`, so the consumer

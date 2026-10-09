@@ -2,8 +2,8 @@
 
 A vendor-neutral standard for **test certificates**: small, checkable records
 asserting that a named framework ran specific commands, covering specific test
-targets, against a specific commit in a clean repository, on a specific
-platform, and that they passed.
+targets, against a specific content of a repository's version-controlled files,
+on a specific platform, and that they passed.
 
 A certificate answers one question — *"were the required tests green for exactly
 this state?"* — in a form another party can verify without rerunning them.
@@ -35,9 +35,10 @@ the document carefully.
 | Document | Contents |
 | -------- | -------- |
 | [Standard.md](./Standard.md) | The record format, the fields, and conformance requirements |
+| [Content-Id.md](./Content-Id.md) | How the tested content is identified: self-describing, order-independent content ids |
 | [Canonical-Payload.md](./Canonical-Payload.md) | The exact byte serialization a signature covers |
 | [Verification.md](./Verification.md) | Validity, signature checking, key stores, coverage |
-| [Transport.md](./Transport.md) | Carrying certificates alongside commits |
+| [Transport.md](./Transport.md) | Carrying certificates alongside the content they attest |
 | [Conformance.md](./Conformance.md) | What the conformance suite contains, and why |
 | [vectors/](./vectors/README.md) | The suite itself — byte-exact vectors, plain data, no runner |
 
@@ -49,15 +50,17 @@ the document carefully.
 - Canonical serialization (byte-exact, so independent implementations agree)
 - Signing and signature verification
 - Registered-key stores, rotation and revocation
-- The generic validity check: VCS binding, platform, and coverage as a union
-- Transport alongside a commit
+- Content identifiers for the tested state
+- The generic validity check: content binding, platform, and coverage as a union
+- Transport alongside the content it attests
 
 **Out of scope** — decided by each framework, or by each project:
 
 - *Who* may issue a certificate, and under what preconditions
 - What a framework additionally requires of its own lock file or config
-- **How several frameworks compose into a push gate.** There is no generic
-  pre-receive hook and this standard does not define one (see below)
+- **How several frameworks compose into a gate**, at commit or at push time.
+  There is no generic pre-commit or pre-receive hook and this standard does not
+  define one (see below)
 - Whether a signature is required, and whose keys are trusted
 - What consumers do with a valid certificate — gate a push, skip CI work,
   display a status, or merely record it
@@ -68,18 +71,26 @@ everywhere or certificates do not interoperate. The parts below the line are
 exactly where projects legitimately differ, and forcing agreement there would
 prevent adoption rather than enable it.
 
-## The commit is the binding
+## The content is the binding
 
-Every framework's inputs are files in a repository at a commit — its
-configuration, its target definitions, and its lock file are all under version
-control. A certificate naming a commit and attesting the tree was clean has
-therefore, transitively, bound every committed input, without the standard
-needing to know what those inputs are.
+Every framework's inputs are files under version control — its configuration,
+its target definitions, and its lock file. A certificate identifying the content
+of those files has therefore, transitively, bound every version-controlled
+input, without the standard needing to know what those inputs are.
 
 That is why there is no environment digest or lock hash in the format. A
-framework wanting a deeper check resolves **its own lock file at that commit**
-and applies whatever rules it likes. The standard says *which commit, and was it
-clean*; the framework says *what that means for me*.
+framework wanting a deeper check resolves **its own lock file in that content**
+and applies whatever rules it likes. The standard says *which content*; the
+framework says *what that means for me*.
+
+It binds **content, not a commit**. Content is identified by a self-describing
+hash — git's own tree id where the VCS has one, or an order-independent manifest
+digest this standard defines — so a certificate is valid **before** the commit
+is made, and covers whichever commit later records that content, whatever its
+message, author or parents. Tests run on the working tree, the certificate is
+issued, and the commit follows; nothing is re-run. And because the content of a
+commit-to-be is known before it exists, a project can require a certificate at
+commit time — a pre-commit gate — as well as at push time.
 
 The corollary matters as much: anything **not** under version control is not
 bound by a certificate. A framework depending on such state must refuse to issue
@@ -91,13 +102,14 @@ A repository may be tested by several frameworks, and their certificates
 coexist. Each names its `framework`; consumers filter on that first, and ignore
 what they do not implement rather than rejecting it.
 
-It follows that **a push gate is project-specific**. Deciding "is this commit
-adequately tested?" means deciding which frameworks must have certified, which
-targets and platforms each must cover, and what each framework's own lock file
-must say — none of it universal. Each framework ships a verifier for its own
-certificates; a project composes them under its own policy. A generic hook could
-check only the signature and the VCS match, which is necessary but nowhere near
-sufficient, and passing on that basis would be actively misleading.
+It follows that **a gate is project-specific**, at commit time or at push time.
+Deciding "is this commit adequately tested?" means deciding which frameworks
+must have certified, which targets and platforms each must cover, and what each
+framework's own lock file must say — none of it universal. Each framework ships
+a verifier for its own certificates; a project composes them under its own
+policy. A generic hook could check only the signature and the content match,
+which is necessary but nowhere near sufficient, and passing on that basis would
+be actively misleading.
 
 ## Assurance is a deployment property, not a format field
 
