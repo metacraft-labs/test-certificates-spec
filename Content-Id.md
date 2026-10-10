@@ -116,13 +116,31 @@ staging area is neither read as the tested state nor modified:
 ```sh
 tmp=$(mktemp)
 cp "$(git rev-parse --git-path index)" "$tmp"   # start from what is tracked
-GIT_INDEX_FILE=$tmp git add --update -- :/      # take working-tree content
+TZ=UTC0 touch -t 197001010000.01 "$tmp"         # trust no stat data (below)
+GIT_INDEX_FILE=$tmp git -c core.fsmonitor=false \
+  add --update -- :/                            # take working-tree content
 GIT_INDEX_FILE=$tmp git write-tree              # the content id's digest
 ```
 
 `git add --update` refreshes every tracked entry from the working tree and
 removes deleted ones, and adds nothing untracked — which is §2 exactly. A
 repository with no index yet tracks nothing; its content is the empty tree.
+
+The `touch` and `core.fsmonitor=false` are not optional. git skips reading a
+file whose stat data (size, mtime, inode, ...) matches its index entry, and
+re-reads it only when the entry is not older than the **index file's own**
+mtime ([racy git](https://git-scm.com/docs/racy-git)) — or not at all when a
+filesystem monitor last called it unchanged. A fresh copy has a fresh mtime,
+so a same-size edit made in the second the user's index was last written reads
+as clean in the copy, and the digest names the *old* content. Dating the copy
+one second after the epoch (`0` means "unknown" to git) makes every entry
+racily clean, so git compares every tracked file's content with its indexed
+blob; preserving the original's mtime (`cp -p`) is not enough, because it
+still misses a rewrite that kept size, mtime and inode (an mtime-preserving
+copy or restore) wherever ctime is not compared. The cost is reading every
+tracked file once. An implementation that does not run these commands sets
+the copy's modification time to 1 (seconds since the epoch) by whatever means
+its platform offers, and disables the filesystem monitor for those commands.
 
 **Scoped**, the digest is the id of the tree holding **only the in-scope
 entries, at their full repository paths**. Starting from the unscoped tree `T`:
