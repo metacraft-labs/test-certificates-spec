@@ -217,8 +217,17 @@ root, a privileged producer prunes the system partitions it writes:
   directory for the content of the current repository's `HEAD^{tree}` where
   the pruner knows one.
 - Pruning MUST NOT remove a directory a producer is writing into. Removing a
-  directory, then the producer's rename failing, is acceptable: the producer
-  recreates it and retries once.
+  directory, then the producer's write or rename failing, is acceptable: the
+  producer recreates it and retries once.
+- A pruner MUST take a directory out of the store in one atomic step — by
+  renaming it, within its parent, to a name beginning with `.` — and only
+  then delete the renamed tree. Deleting it in place (its entries, then the
+  directory) is not one step: a producer whose first attempt that deletion
+  defeated retries into the same, still-present directory, and the same
+  deletion goes on to remove the retry's temporary file and the directory
+  under it, so retrying once would not be enough. A name beginning with `.`
+  under `<root>/v1/<algorithm>/` is never a content directory: readers ignore
+  it, and any pruner may delete it.
 
 Pruning is a matter of disk space, not of correctness: a pruned certificate is
 re-issued by running the tests again.
