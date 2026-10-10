@@ -96,6 +96,7 @@ Every consumer, whatever its framework, MUST check:
 | `vcs.content` | Equal to the content id of the state under evaluation, computed with the certificate's algorithm over the certificate's scope (§4.1.1) |
 | `vcs.paths` | When present, the claim covers only those paths. A consumer requiring broader coverage MUST reject it (§4.1.2). |
 | `vcs.untracked` | Consumer's choice. Untracked files are outside `content`; they usually mean scratch work, but can mean a file the build picked up. |
+| `vcs.repo`, `project` | Consumer's choice. A consumer MAY require them to equal its own names for the repository and project; the content binding does not depend on them, so a certificate for identical content issued under another name — a fork, a renamed clone — matches by content alone. |
 | `vcs.base` | **Not checked.** It MUST NOT be compared with the commit under evaluation (§4.1.1). |
 | `platform` | Exact equality with the platform being satisfied |
 | `result` | MUST be `passed` |
