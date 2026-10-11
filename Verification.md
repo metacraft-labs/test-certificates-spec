@@ -135,7 +135,9 @@ Three outcomes besides a match:
   does not implement, an algorithm Content-Id §4 does not define, or
   `git-tree-sha256` against a repository in the SHA-1 object format. It has not established a mismatch, so the certificate is
   **unverifiable** (§7), not invalid, and §7.1 decides whether that affects the
-  outcome.
+  outcome. A consumer meets such a record only through a carrier it
+  reads in full. Lookups keyed by content id never return one
+  ([Transport §5.1](./Transport.md#51-lookup-is-by-the-consumers-own-content-id)).
 
 #### 4.1.2 Scoped claims
 
