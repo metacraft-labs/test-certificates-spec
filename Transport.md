@@ -368,3 +368,23 @@ Whatever the carrier, discovery MUST be:
   project that does not use certificates, and MUST NOT be an error in itself.
   Whether *absence* blocks anything is a consumer policy decision, made after
   discovery, not during it.
+
+### 5.1 Lookup is by the consumer's own content id
+
+The local store (§2) and git notes (§3) are both keyed by content id, and a
+consumer looks up the id **it computes** for the state in front of it. So it
+finds only certificates whose `content` uses an algorithm it computes, over a
+scope it asks for. A certificate in any other algorithm sits under another key
+and is never found. It is reported as "none found", not as unverifiable.
+
+Two consequences:
+
+- **A producer SHOULD use the algorithm its consumers compute.** For a git
+  repository that is the repository's `git-tree-*` algorithm
+  ([Content-Id §4](./Content-Id.md#4-algorithms)). A certificate in another
+  algorithm is valid, but no keyed lookup will ever surface it.
+- **The "algorithm the consumer cannot compute" outcome**
+  ([Verification §4.1.1](./Verification.md#411-matching-content)) arises only
+  through a carrier read in full, such as a CI artifact or a directory handed
+  to the verifier. There the record is in hand without a lookup. Keyed carriers
+  never produce it.
