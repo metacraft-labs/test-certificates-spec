@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Re-derive every signature in the suite, and rebuild vectors/index.json.
 
-Signed certificates live in three places: signature/<case>/signature.b64,
-verify/<case>/certificates/*.toml and store/<case>/certificate.toml.
+Signed certificates live in four places: signature/<case>/signature.b64,
+verify/<case>/certificates/*.toml, store/<case>/certificate.toml, and the
+records inside notes/<case>/{note,expected-note,add}.txt.
 
 NON-NORMATIVE authoring tooling. See tools/README.md.
 
@@ -241,6 +242,55 @@ def resign_store_certificates(w: Writer) -> None:
         w.write(path, text[:start] + new_block + text[end:])
 
 
+NOTE_DELIMITER = b"# --- test-certificate ---\n"   # Transport.md §3.1
+_NOTE_BLOCK = re.compile(
+    rb"\n\[certificate\.signature\]\nalgorithm = \"ed25519\"\n"
+    rb"value = \"[^\"\n]*\"\n\Z")
+_NOTE_KEY_ID = re.compile(rb"^key_id = \"([^\"\n]*)\"$", re.MULTILINE)
+
+
+def resign_note_records(w: Writer) -> None:
+    """Re-sign every signed record in the notes group.
+
+    Each note-shaped file (note.txt, expected-note.txt, add.txt) is split on
+    the Transport.md §3.1 delimiter line; a piece ending in a signature table
+    is signed over the bytes before that table — the hand-derived payload, not
+    a serializer's output — and only the `value` string is rewritten. Pieces
+    without a table, and the deliberately corrupt ones, are left alone.
+    """
+    root = os.path.join(VECTORS, "notes")
+    if not os.path.isdir(root):
+        return
+    for case in sorted(os.listdir(root)):
+        for fname in ("note.txt", "expected-note.txt", "add.txt"):
+            path = os.path.join(root, case, fname)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as f:
+                text = f.read()
+            # add.txt is one record with no delimiter in front of it.
+            framed = fname != "add.txt"
+            pieces = (re.split(rb"(?:^|(?<=\n))" + re.escape(NOTE_DELIMITER),
+                               text) if framed else [text])
+            out = []
+            for piece in pieces:
+                m = _NOTE_BLOCK.search(piece)
+                if m:
+                    payload = piece[:m.start()]
+                    ids = _NOTE_KEY_ID.findall(payload)
+                    assert len(ids) == 1, f"{path}: signed record, no key_id"
+                    key_id = ids[0].decode()
+                    if key_id not in KEY_FOR_ID:
+                        raise SystemExit(f"{path}: no signing key for {key_id!r}")
+                    b64 = ssh_sig.sign(payload, KEY_FOR_ID[key_id])
+                    assert ssh_sig.b64_is_canonical(b64)
+                    piece = (payload + b"\n[certificate.signature]\n"
+                             b"algorithm = \"ed25519\"\nvalue = \""
+                             + b64.encode("ascii") + b"\"\n")
+                out.append(piece)
+            w.write(path, NOTE_DELIMITER.join(out) if framed else out[0])
+
+
 def rebuild_index(w: Writer) -> None:
     """A directory listing with each case's one-line purpose.
 
@@ -252,7 +302,8 @@ def rebuild_index(w: Writer) -> None:
         "namespace": ssh_sig.NAMESPACE,
         "groups": {},
     }
-    for group in ("payload", "signature", "content", "verify", "store"):
+    for group in ("payload", "signature", "content", "verify", "store",
+                  "notes"):
         cases = []
         for name in sorted(os.listdir(os.path.join(VECTORS, group))):
             d = os.path.join(VECTORS, group, name)
@@ -290,6 +341,7 @@ def main() -> int:
     regenerate_signature_vectors(w)
     resign_certificates(w)
     resign_store_certificates(w)
+    resign_note_records(w)
     rebuild_index(w)
 
     if not w.changed:

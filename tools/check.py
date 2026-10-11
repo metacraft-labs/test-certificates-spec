@@ -22,6 +22,9 @@ Groups:
     store      every expected-path.txt is the Transport.md §2.2 path derived
                from certificate.toml: the content id split at its first `:`,
                and the SHA-256 of the payload rebuilt from the parsed fields
+    notes      every note.txt splits, per Transport.md §3.1, into the records
+               and skipped pieces expected.json lists; every writer case's
+               expected-note.txt is what adding add.txt to note.txt produces
     index      vectors/index.json matches what is on disk
 """
 
@@ -68,6 +71,13 @@ REQUIRED_STORE = [
     "signed-non-canonical-no-block", "manifest-content", "scoped",
 ]
 
+REQUIRED_NOTES = [
+    "single-unsigned", "signed-and-unsigned", "escaped-newline",
+    "corrupt-middle", "foreign-preamble", "appended",
+    "signed-replaces-unsigned", "duplicate-not-added",
+    "unsigned-copy-not-added",
+]
+
 # Each store case's canonical.txt is a copy of a hand-derived payload vector,
 # named in its pins.md. Checked byte for byte so the two cannot drift apart.
 STORE_PAYLOAD_SOURCE = {
@@ -86,7 +96,8 @@ STORE_KEYS = {
                                         "insecure-test-key.pub"),
 }
 
-GROUPS_ON_DISK = ("payload", "signature", "content", "verify", "store")
+GROUPS_ON_DISK = ("payload", "signature", "content", "verify", "store",
+                  "notes")
 
 
 class Results:
@@ -508,6 +519,189 @@ def check_store(r: Results) -> None:
             "store/scoped is under its own scoped content id")
 
 
+NOTE_DELIMITER = b"# --- test-certificate ---\n"   # Transport.md §3.1
+
+
+def split_note(blob: bytes) -> tuple[bytes, list[bytes]]:
+    """Transport.md §3.1: split on lines equal to the delimiter.
+
+    Returns the piece before the first delimiter (empty in a conforming note)
+    and every piece after it, in order.
+    """
+    lines = re.findall(rb"[^\n]*\n|[^\n]+\Z", blob)
+    pieces: list[list[bytes]] = [[]]
+    for line in lines:
+        if line == NOTE_DELIMITER:
+            pieces.append([])
+        else:
+            pieces[-1].append(line)
+    joined = [b"".join(p) for p in pieces]
+    return joined[0], joined[1:]
+
+
+def parse_record(piece: bytes):
+    """One piece -> (payload, signature table or None), or None if it does
+    not parse. The payload is rebuilt from the parsed fields
+    (Canonical-Payload.md §5), never sliced out of the piece."""
+    try:
+        doc = tomllib.loads(piece.decode("utf-8"))
+        payload = rs.serialize(rs.fields_from_document(doc))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError, rs.NotCanonical,
+            KeyError, TypeError, ValueError):
+        return None
+    sig = doc.get("certificate", {}).get("signature")
+    if sig is not None and not sig.get("algorithm"):
+        sig = None                        # Canonical-Payload.md §6
+    return payload, sig
+
+
+def read_note(blob: bytes) -> list:
+    """What a reader yields: a record per parsed piece, None per skipped."""
+    lead, pieces = split_note(blob)
+    out: list = [None] if lead else []    # a non-empty lead is never parsed
+    out += [parse_record(p) for p in pieces]
+    return out
+
+
+def record_bytes(payload: bytes, sig) -> bytes:
+    """The §3.1 record form: payload, then (signed) a blank line and the
+    signature table, in the payload's formatting rules."""
+    if sig is None:
+        return payload
+    return (payload + b"\n[certificate.signature]\n"
+            + f"algorithm = {rs.escape(sig['algorithm'])}\n".encode()
+            + f"value = {rs.escape(sig['value'])}\n".encode())
+
+
+def write_note(blob: bytes, record: bytes) -> bytes:
+    """Transport.md §3.1, writer side: add one record to a note."""
+    new = parse_record(record)
+    assert new is not None, "the record being added must parse"
+    lead, pieces = split_note(blob)
+    for i, piece in enumerate(pieces):
+        old = parse_record(piece)
+        if old is None or old[0] != new[0]:
+            continue
+        if new[1] is not None:            # a signed copy replaces, in place
+            pieces[i] = record
+        break                             # present: never added again
+    else:
+        pieces.append(record)
+    return lead + b"".join(NOTE_DELIMITER + p for p in pieces)
+
+
+def check_notes(r: Results) -> None:
+    print("notes: each note splits into the records expected.json lists, "
+          "and each writer case produces expected-note.txt")
+    present = cases("notes")
+    missing = [c for c in REQUIRED_NOTES if c not in present]
+    r.check(not missing, f"all {len(REQUIRED_NOTES)} required cases present",
+            f"missing: {missing}")
+    pub = open(STORE_KEYS["example-key-2026-q2"], encoding="ascii").read()
+    for name in present:
+        d = os.path.join(VECTORS, "notes", name)
+        with open(os.path.join(d, "note.txt"), "rb") as f:
+            blob = f.read()
+        with open(os.path.join(d, "expected.json"), encoding="utf-8") as f:
+            want = json.load(f)["pieces"]
+
+        r.check(blob.endswith(b"\n") and b"\r" not in blob
+                and not blob.endswith(NOTE_DELIMITER)
+                and (blob.startswith(NOTE_DELIMITER)
+                     or name == "foreign-preamble"),
+                f"notes/{name} note.txt is LF-only, begins with the delimiter "
+                f"and does not end with one")
+
+        got = read_note(blob)
+        r.check(len(got) == len(want),
+                f"notes/{name} yields {len(want)} piece(s)",
+                f"got {len(got)}")
+        _, pieces = split_note(blob)
+        offset = len(got) - len(pieces)
+        for i, (g, w) in enumerate(zip(got, want)):
+            label = f"notes/{name} piece {i + 1}"
+            if w.get("skipped"):
+                r.check(g is None, f"{label} is reported and skipped",
+                        "it parsed")
+                continue
+            wp = w["payload"].encode("utf-8")
+            if g is None:
+                r.check(False, label, "did not parse")
+                continue
+            payload, sig = g
+            r.check(payload == wp, f"{label} payload",
+                    f"first difference at byte {first_diff(payload, wp)}")
+            r.check((sig is not None) == w["signed"],
+                    f"{label} is {'signed' if w['signed'] else 'unsigned'}")
+            # Written by a conforming writer: exactly the record form.
+            r.check(pieces[i - offset] == record_bytes(wp, sig),
+                    f"{label} is in the §3.1 record form")
+            if sig is not None:
+                ok, detail = ssh_sig.verify(payload, pub.strip(),
+                                            sig.get("value", ""))
+                r.check(ok and sig.get("algorithm") == "ed25519",
+                        f"{label} signature verifies over the payload",
+                        detail)
+            vec = w.get("payload_vector")
+            if vec is not None:
+                with open(os.path.join(VECTORS, "payload", vec,
+                                       "canonical.txt"), "rb") as f:
+                    r.check(f.read() == wp,
+                            f"{label} payload is payload/{vec}'s bytes")
+
+        add = os.path.join(d, "add.txt")
+        if os.path.exists(add):
+            with open(add, "rb") as f:
+                record = f.read()
+            with open(os.path.join(d, "expected-note.txt"), "rb") as f:
+                expected_note = f.read()
+            parsed = parse_record(record)
+            r.check(parsed is not None
+                    and record == record_bytes(parsed[0], parsed[1]),
+                    f"notes/{name} add.txt is one record in the §3.1 form")
+            got_note = write_note(blob, record)
+            r.check(got_note == expected_note,
+                    f"notes/{name} adding add.txt yields expected-note.txt",
+                    f"first difference at byte "
+                    f"{first_diff(got_note, expected_note)}")
+
+    # The facts the cases' pins.md files claim, asserted directly.
+    def blob_of(n: str, f: str = "note.txt") -> bytes:
+        with open(os.path.join(VECTORS, "notes", n, f), "rb") as fh:
+            return fh.read()
+    esc = blob_of("escaped-newline")
+    r.check(esc.count(NOTE_DELIMITER[:-1]) == 3
+            and len(split_note(esc)[1]) == 2,
+            "notes/escaped-newline: the delimiter text occurs three times, "
+            "starts a line twice")
+    r.check("\n# --- test-certificate ---\n" in
+            tomllib.loads(split_note(esc)[1][0].decode())
+            ["certificate"]["command"][0]["argv"][3],
+            "notes/escaped-newline: the value really holds LF, the delimiter, LF")
+    sau = read_note(blob_of("signed-and-unsigned"))
+    r.check(len(sau) == 2 and sau[0][0] != sau[1][0],
+            "notes/signed-and-unsigned: two different payloads")
+    sru = read_note(blob_of("signed-replaces-unsigned"))
+    added = parse_record(blob_of("signed-replaces-unsigned", "add.txt"))
+    r.check(sru[0][1] is None and added[1] is not None
+            and sru[0][0] == added[0],
+            "notes/signed-replaces-unsigned: the present record is the "
+            "unsigned form of the added payload")
+    ucn = read_note(blob_of("unsigned-copy-not-added"))
+    added = parse_record(blob_of("unsigned-copy-not-added", "add.txt"))
+    r.check(ucn[0][1] is not None and added[1] is None
+            and ucn[0][0] == added[0],
+            "notes/unsigned-copy-not-added: the added record is the unsigned "
+            "form of a present signed one")
+    lead, _ = split_note(blob_of("foreign-preamble"))
+    r.check(bool(lead) and parse_record(lead) is not None,
+            "notes/foreign-preamble: the leading piece would parse, and is "
+            "still skipped")
+    for n in ("duplicate-not-added", "unsigned-copy-not-added"):
+        r.check(blob_of(n) == blob_of(n, "expected-note.txt"),
+                f"notes/{n}: the note is unchanged")
+
+
 def sorted_missing(report: dict) -> list:
     return sorted((m["framework"], m["platform"], tuple(sorted(m["targets"])))
                   for m in report.get("missing", []))
@@ -555,6 +749,14 @@ def check_structure(r: Results) -> None:
                               "pins.md"))
                 and os.path.isdir(os.path.join(d, "certificates")),
                 f"verify/{name} has the required files")
+    for name in cases("notes"):
+        d = os.path.join(VECTORS, "notes", name)
+        r.check(all(os.path.exists(os.path.join(d, f))
+                    for f in ("note.txt", "expected.json", "pins.md"))
+                and os.path.exists(os.path.join(d, "add.txt"))
+                == os.path.exists(os.path.join(d, "expected-note.txt")),
+                f"notes/{name} has note.txt, expected.json, pins.md, and "
+                f"add.txt only with expected-note.txt")
     for name in cases("store"):
         d = os.path.join(VECTORS, "store", name)
         r.check(all(os.path.exists(os.path.join(d, f))
@@ -570,6 +772,7 @@ GROUPS = {
     "content": check_content,
     "verify": check_verify,
     "store": check_store,
+    "notes": check_notes,
     "index": check_index,
     "structure": check_structure,
 }

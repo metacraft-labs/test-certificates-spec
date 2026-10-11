@@ -212,6 +212,49 @@ form of `unsigned` (Canonical-Payload §6), under `unsigned`'s name.
 Root resolution (Transport §2.1) depends on the environment and the platform and
 is not a vector; implementations test it against their own environment.
 
+### 6. Note-framing vectors
+
+Each vector is a git-note blob holding several certificates, framed as
+[Transport §3.1](./Transport.md#31-multiple-records-in-one-note) requires, and
+the records a reader must find in it. Some are also a writer case: a record to
+add, and the exact blob the note must become.
+
+```
+vectors/notes/<name>/
+  note.txt           # the note blob, exact bytes, LF
+  expected.json      # the pieces a reader yields, in order: each a record
+                     # (its canonical payload, and whether it is signed) or
+                     # a piece reported and skipped
+  pins.md
+  add.txt            # OPTIONAL: one record a writer adds to note.txt
+  expected-note.txt  # with add.txt: the blob after adding it, exact bytes
+```
+
+An implementation passes the reader half by splitting `note.txt` on lines equal
+to the delimiter, parsing each piece, and comparing what it yields with
+`expected.json`: the same number of pieces, a skipped piece where one is
+listed, and otherwise the same canonical payload — rebuilt from the parsed
+fields — and the same signedness, with every signature verifying under the
+published vector key. It passes the writer half by adding `add.txt` to
+`note.txt` and comparing the result with `expected-note.txt` byte for byte.
+
+Required coverage:
+
+| Vector | What it pins |
+| ------ | ------------ |
+| `single-unsigned` | One record: a leading delimiter, nothing after the record |
+| `signed-and-unsigned` | Two records with different payloads; a signed record's table follows one blank line; blank lines are not separators |
+| `escaped-newline` | A value holding LF, the delimiter's text and LF: canonical escaping keeps it off a line of its own, so the split is on whole lines |
+| `corrupt-middle` | A piece that does not parse is reported and skipped; its neighbours are still read |
+| `foreign-preamble` | Text before the first delimiter — here a record framed with another tool's delimiter — is reported and skipped, never parsed, though it would parse |
+| `appended` | Writer: a new payload goes after the last piece, behind its own delimiter |
+| `signed-replaces-unsigned` | Writer: a signed copy of a present unsigned payload replaces it in place |
+| `duplicate-not-added` | Writer: a payload already present is not added again |
+| `unsigned-copy-not-added` | Writer: the unsigned copy of a present signed payload is not added, and does not replace it |
+
+Pushing, fetching and merging the notes ref, and finding a note by tree id,
+need a live repository and are not vectors.
+
 ## Using the suite
 
 The vectors are plain data with no runner, so any language can consume them.

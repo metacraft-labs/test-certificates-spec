@@ -23,8 +23,13 @@
 # Store paths (Transport.md §2.2) are derived with sed, shell parameter
 # expansion and sha256sum, against expected-path.txt files written by hand.
 #
+# Notes (Transport.md §3.1) are split with awk on lines equal to the
+# delimiter, and each piece is recognised as a record by a line grammar of the
+# canonical form rather than by a TOML parser -- a third reading of the
+# framing, beside the hand-assembled vectors and tools/check.py.
+#
 # Usage:
-#   sh tools/walk-vectors.sh                    # all five groups
+#   sh tools/walk-vectors.sh                    # all six groups
 #   sh tools/walk-vectors.sh payload signature  # selected groups
 #
 # Exit status is 0 when every case behaved as its vector says.
@@ -598,7 +603,173 @@ walk_store() {
 }
 
 # ---------------------------------------------------------------------------
-groups=${*:-"payload signature content verify store"}
+# Group 6: note framing
+#
+# Transport.md §3.1 with awk: the blob is split on lines equal to the
+# delimiter, the piece before the first delimiter must be empty (a non-empty
+# one is reported and skipped, never parsed), and each other piece is a record
+# when it has the canonical record shape -- canonical payload, then optionally
+# a blank line and the signature table. This walker has no TOML parser, so
+# "does not parse" is approximated by "is not in record form", which is what a
+# conforming writer always produces; a reader with a TOML parser parses each
+# piece instead, as tools/check.py does.
+# ---------------------------------------------------------------------------
+delimiter='# --- test-certificate ---'
+
+split_note() { # <blob> <prefix> -> <prefix>.0 … <prefix>.N; prints N
+  rm -f "$2".*
+  awk -v d="$delimiter" -v out="$2" '
+    BEGIN    { n = 0; f = out "." n; printf "" > f }
+    $0 == d  { close(f); n++; f = out "." n; printf "" > f; next }
+             { print > f }
+    END      { close(f); print n }' "$1"
+}
+
+# The shape of a piece, one token per line; anything that is not a line of
+# the canonical form is X. A record is a piece whose token string matches
+# record_shape below.
+shape_of() {
+  awk '
+    function s(v) { return v ~ /^"([^"\\]|\\[btnfr"\\])*"$/ }
+    function a(v) { return v ~ /^\["([^"\\]|\\[btnfr"\\])*"(, "([^"\\]|\\[btnfr"\\])*")*\]$/ }
+    {
+      t = "X"
+      if ($0 == "")                             t = "B"
+      else if ($0 == "[certificate]")           t = "C"
+      else if ($0 == "[certificate.vcs]")       t = "V"
+      else if ($0 == "[[certificate.command]]") t = "M"
+      else if ($0 == "[certificate.signature]") t = "G"
+      else if (match($0, /^[a-z_]+ = /)) {
+        k = substr($0, 1, RLENGTH - 3); v = substr($0, RLENGTH + 1)
+        if (k ~ /^(targets|paths|argv)$/) { if (a(v)) t = k }
+        else if (k == "untracked") { if (v == "true" || v == "false") t = k }
+        else if (k ~ /^(schema|framework|project|platform|result|issued_at|issuer|key_id|repo|content|base|algorithm|value)$/) {
+          if (s(v)) t = k
+        }
+      }
+      printf "%s ", t
+    }' "$1"
+}
+record_shape='^schema B C framework project platform targets result issued_at issuer (key_id )?B V repo (paths )?content untracked (base )?(B M argv )+(B G algorithm value )?$'
+
+is_record() { shape_of "$1" | grep -Eq "$record_shape"; }
+is_signed() { grep -qx '\[certificate\.signature\]' "$1"; }
+
+walk_notes() {
+  printf 'notes: split each note with awk and compare the pieces
+'
+  for d in "$vectors"/notes/*/; do
+    d=${d%/}
+    name=$(basename "$d")
+    if [ "$(tail -c 1 "$d/note.txt" | od -An -c | tr -d ' ')" != '\n' ]; then
+      bad "notes/$name: note.txt does not end with LF"
+      continue
+    fi
+    n=$(split_note "$d/note.txt" "$tmp/piece")
+    # The pieces a reader yields: a non-empty lead first, then pieces 1…n.
+    : > "$tmp/pieces"
+    [ -s "$tmp/piece.0" ] && printf '%s\n' "$tmp/piece.0 lead" >> "$tmp/pieces"
+    i=1
+    while [ "$i" -le "$n" ]; do
+      printf '%s\n' "$tmp/piece.$i" >> "$tmp/pieces"; i=$((i + 1))
+    done
+    want_n=$(jq '.pieces | length' "$d/expected.json")
+    got_n=$(wc -l < "$tmp/pieces")
+    if [ "$got_n" -ne "$want_n" ]; then
+      bad "notes/$name: $got_n pieces, expected $want_n"
+      continue
+    fi
+    k=0
+    while IFS=' ' read -r piece lead; do
+      label="notes/$name piece $((k + 1))"
+      skipped=$(jq -r --argjson k "$k" '.pieces[$k].skipped // false' \
+                  "$d/expected.json")
+      if [ -n "$lead" ] || ! is_record "$piece"; then
+        if [ "$skipped" = true ]; then
+          ok "$label is reported and skipped"
+        else
+          bad "$label: skipped, but expected a record"
+        fi
+        k=$((k + 1)); continue
+      fi
+      if [ "$skipped" = true ]; then
+        bad "$label: a record, but expected it skipped"
+        k=$((k + 1)); continue
+      fi
+      cert_payload "$piece" > "$tmp/note-payload"
+      jq -j --argjson k "$k" '.pieces[$k].payload' "$d/expected.json" \
+        > "$tmp/note-want"
+      if cmp -s "$tmp/note-payload" "$tmp/note-want"; then
+        ok "$label payload"
+      else
+        bad "$label payload" "$(cmp "$tmp/note-payload" "$tmp/note-want" 2>&1 | head -1)"
+      fi
+      want_signed=$(jq -r --argjson k "$k" '.pieces[$k].signed' "$d/expected.json")
+      if is_signed "$piece"; then got_signed=true; else got_signed=false; fi
+      if [ "$got_signed" = "$want_signed" ]; then
+        ok "$label signed: $got_signed"
+      else
+        bad "$label signed: $got_signed, expected $want_signed"
+      fi
+      if [ "$got_signed" = true ]; then
+        pub=$(store_pub "$(tval "$piece" key_id)")
+        tval "$piece" value > "$tmp/note-sig"
+        if [ -n "$pub" ] && [ "$(tval "$piece" algorithm)" = ed25519 ] \
+           && ssh_verify "$tmp/note-payload" "$pub" "$tmp/note-sig" \
+                         "$namespace" > "$tmp/note-out" 2>&1; then
+          ok "$label signature verifies over its payload"
+        else
+          bad "$label signature does not verify" "$(head -1 "$tmp/note-out")"
+        fi
+      fi
+      k=$((k + 1))
+    done < "$tmp/pieces"
+
+    # Writer side: add add.txt to note.txt, compare with expected-note.txt.
+    [ -f "$d/add.txt" ] || continue
+    if ! is_record "$d/add.txt"; then
+      bad "notes/$name: add.txt is not one record"; continue
+    fi
+    cert_payload "$d/add.txt" > "$tmp/add-payload"
+    found=0
+    i=1
+    while [ "$i" -le "$n" ]; do
+      if is_record "$tmp/piece.$i"; then
+        cert_payload "$tmp/piece.$i" > "$tmp/have-payload"
+        if cmp -s "$tmp/have-payload" "$tmp/add-payload"; then
+          found=$i; break
+        fi
+      fi
+      i=$((i + 1))
+    done
+    {
+      cat "$tmp/piece.0"
+      i=1
+      while [ "$i" -le "$n" ]; do
+        printf '%s\n' "$delimiter"
+        if [ "$i" = "$found" ] && is_signed "$d/add.txt"; then
+          cat "$d/add.txt"           # a signed copy replaces, in place
+        else
+          cat "$tmp/piece.$i"
+        fi
+        i=$((i + 1))
+      done
+      if [ "$found" = 0 ]; then    # not present: appended
+        printf '%s\n' "$delimiter"
+        cat "$d/add.txt"
+      fi
+    } > "$tmp/note-out"
+    if cmp -s "$tmp/note-out" "$d/expected-note.txt"; then
+      ok "notes/$name: adding add.txt yields expected-note.txt"
+    else
+      bad "notes/$name: adding add.txt" \
+          "$(cmp "$tmp/note-out" "$d/expected-note.txt" 2>&1 | head -1)"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+groups=${*:-"payload signature content verify store notes"}
 for g in $groups; do
   case "$g" in
     payload)   walk_payload;;
@@ -606,6 +777,7 @@ for g in $groups; do
     content)   walk_content;;
     verify)    walk_verify;;
     store)     walk_store;;
+    notes)     walk_notes;;
     *) printf 'unknown group: %s\n' "$g" >&2; exit 2;;
   esac
   printf '\n'

@@ -223,6 +223,44 @@
         "name": "unsigned-empty-block",
         "pins": "the empty-signature-block form of an unsigned certificate is stored under the same name as the form with no block at all."
       }
+    ],
+    "notes": [
+      {
+        "name": "appended",
+        "pins": "a writer adds a record whose payload is not yet present after the last piece, behind its own delimiter, leaving every existing byte unchanged."
+      },
+      {
+        "name": "corrupt-middle",
+        "pins": "a piece that does not parse is reported and skipped, and the records on either side of it are still yielded."
+      },
+      {
+        "name": "duplicate-not-added",
+        "pins": "a writer does not add a record whose payload is already present — publishing the same certificate twice changes nothing."
+      },
+      {
+        "name": "escaped-newline",
+        "pins": "the delimiter cannot occur inside a canonical record, even when a value contains a newline followed by the delimiter's exact text — the newline is written as the two characters `\\n`, so the text never starts a line."
+      },
+      {
+        "name": "foreign-preamble",
+        "pins": "text before the first delimiter is reported and skipped, never parsed as a record — even when, as here, it would parse."
+      },
+      {
+        "name": "signed-and-unsigned",
+        "pins": "two records with different payloads share a note: a signed one, whose signature table follows its payload after one blank line, and an unsigned one."
+      },
+      {
+        "name": "signed-replaces-unsigned",
+        "pins": "a signed record whose payload is already present, unsigned, replaces the present record in place."
+      },
+      {
+        "name": "single-unsigned",
+        "pins": "the framing of a one-record note — a delimiter line, then the record, and nothing after it."
+      },
+      {
+        "name": "unsigned-copy-not-added",
+        "pins": "an unsigned copy of a present signed record is the same payload, so it is not added, and it never replaces the signed one."
+      }
     ]
   }
 }

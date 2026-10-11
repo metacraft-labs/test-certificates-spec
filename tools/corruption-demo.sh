@@ -7,9 +7,9 @@
 # script takes a throwaway copy of the repository, damages one thing at a time,
 # and asserts that the checks go red — once for a canonical payload, once for a
 # signature, once for a signature inside a verification vector, once for an
-# expected content id, and twice for the store group -- an expected path, and
-# the signature tying a non-canonical certificate to its payload -- so all five
-# groups are shown to be load-bearing. Another
+# expected content id, twice for the store group -- an expected path, and
+# the signature tying a non-canonical certificate to its payload -- and once
+# for a note's framing, so all six groups are shown to be load-bearing. Another
 # flips a record's schema version to show that the §7.1 relevance distinction
 # is load-bearing too, which no amount of signature checking would catch.
 #
@@ -42,7 +42,8 @@ expect_red() { # <label> <command…>
   else
     pass=$((pass + 1))
     printf '  detected      %s\n' "$label"
-    grep -m2 -E 'FAIL|expected' "$work/out" | sed 's/^/          /' || true
+    { grep -m2 'FAIL' "$work/out" || grep -m2 'expected' "$work/out"; } \
+      | sed 's/^/          /' || true
   fi
 }
 
@@ -189,6 +190,27 @@ expect_red "reference signature check over the rebuilt payload" \
 expect_red "ssh-keygen via the shell walker" \
   sh "$work/tools/walk-vectors.sh" store
 cp "$work/store-cert.orig" "$target"
+printf '\n'
+
+# --- 8. one byte of a delimiter line in a note -----------------------------
+# The second delimiter of notes/signed-and-unsigned becomes
+# `# --- test-certificate --=`: still a TOML comment, so the blob still looks
+# like two records to a human, but it no longer splits there. The two records
+# fuse into one piece that does not parse, and a reader must now report one
+# skipped piece where the vector expects two records. The match is anchored on
+# the closing quote of the first record's signature value, so only the second
+# delimiter -- not the one that opens the blob -- is touched.
+printf '8. one byte of the second delimiter in vectors/notes/signed-and-unsigned/note.txt\n'
+target=$work/vectors/notes/signed-and-unsigned/note.txt
+cp "$target" "$work/note.orig"
+nl='
+'
+corrupt "$target" "\"$nl# --- test-certificate ---" "\"$nl# --- test-certificate --="
+expect_red "reference reader no longer finds two records" \
+  python3 "$work/tools/check.py" notes
+expect_red "awk, via the shell walker, no longer finds two records" \
+  sh "$work/tools/walk-vectors.sh" notes
+cp "$work/note.orig" "$target"
 printf '\n'
 
 printf '%d as expected, %d wrong\n' "$pass" "$fail"

@@ -42,6 +42,12 @@ vectors/
     expected-path.txt         where it is stored, relative to the store root
     canonical.txt             the payload whose hash names it (diagnostic)
     pins.md
+  notes/<case>/             note framing (Transport.md §3.1)
+    note.txt                  a git-note blob holding several records
+    expected.json             the pieces a reader yields from it
+    pins.md
+    add.txt                   OPTIONAL: a record a writer adds to note.txt
+    expected-note.txt         with add.txt: the blob after adding it
 ```
 
 Rules for a walker:
@@ -381,13 +387,63 @@ The signatures in `signed` and `signed-non-canonical` are real: made over
 group; they are there so that a non-canonical file is provably the certificate
 it claims to be.
 
+## Group 6: `notes/`
+
+An implementation passes by reading `note.txt` as
+[Transport.md §3.1](../Transport.md#31-multiple-records-in-one-note) requires
+and yielding exactly the pieces `expected.json` lists; and, for a case that has
+an `add.txt`, by adding that record to `note.txt` and producing
+`expected-note.txt` byte for byte.
+
+| File | Meaning |
+| ---- | ------- |
+| `note.txt` | The note blob, exact bytes, LF. Each record is preceded by the line `# --- test-certificate ---`; `foreign-preamble` deliberately does not begin with one. |
+| `expected.json` | `{"pieces": [...]}`, in blob order. A record is `{"payload": "<the canonical payload, as a JSON string>", "signed": true \| false}`, with `payload_vector` naming the `payload/` case whose `canonical.txt` it copies, when it copies one. A skipped piece is `{"skipped": true, "why": "prose"}`. |
+| `add.txt` | One record in the §3.1 record form — canonical payload, and when signed a blank line and the signature table — with no delimiter. |
+| `expected-note.txt` | The blob after adding `add.txt`. Present exactly when `add.txt` is. |
+
+What a walker does, per case:
+
+1. Split `note.txt` on lines **equal to** the delimiter — never on occurrences
+   of its text (`escaped-newline`).
+2. The piece before the first delimiter is empty in a conforming note and is
+   dropped. When it is not empty it is the first entry of `pieces`, and is
+   skipped: it is never parsed, even when it would parse (`foreign-preamble`).
+3. Parse every other piece as one certificate. A piece that does not parse is
+   a `skipped` entry, reported; the next piece is still read
+   (`corrupt-middle`).
+4. For each record, rebuild the canonical payload from the parsed fields and
+   compare it with `payload` byte for byte; compare whether it carries a
+   signature table with `signed`. Every signed record carries a real ed25519
+   signature over its payload by the published key
+   `signature/keys/insecure-test-key` (`key_id` `example-key-2026-q2`); verify
+   it.
+5. For a writer case, add `add.txt`: if a piece's payload equals its payload,
+   replace that piece in place when `add.txt` is signed and leave the note
+   alone when it is not; otherwise append the delimiter and `add.txt`. Every
+   other piece stays byte for byte. Compare with `expected-note.txt`.
+
+`payload` and `signed` are normative; `why` is prose. A walker with no TOML
+parser can treat "parses" as "is in the §3.1 record form", since that is what
+a conforming writer produces — `tools/walk-vectors.sh` does — but a real reader
+parses.
+
+The writer cases share their notes with the reader cases, and the pairs are the
+point:
+
+| Cases | Why they differ |
+| ----- | --------------- |
+| `signed-replaces-unsigned` vs `unsigned-copy-not-added` | The same payload, signed and not, in opposite directions: a signed copy replaces an unsigned one in place; an unsigned copy never replaces a signed one. |
+| `appended` vs `duplicate-not-added` | `payload/minimal` added to a note that lacks it, and to one that has it. |
+
 ## Ambiguities this suite closed
 
 Per Conformance.md, a vector is added whenever an ambiguity is found in the
 prose, **in the same change that clarifies the prose**. Authoring this suite
 found these, and the listed documents were changed. Three were found while
-moving the suite to the 2026-10-09 content binding, and the two about the
-signature block and the store while adding the `store/` group:
+moving the suite to the 2026-10-09 content binding, the two about the
+signature block and the store while adding the `store/` group, and the three
+about note framing while adding the `notes/` group:
 
 | Ambiguity | Resolution | Vector |
 | --------- | ---------- | ------ |
@@ -408,12 +464,16 @@ signature block and the store while adding the `store/` group:
 | Conformance.md §5 asked for "the same certificate with and without its signature block in non-canonical form" next to "a signed and an unsigned certificate", which reads either as the signed/unsigned twins again or as a signed certificate whose block was removed — and the two land on different names. | A signed certificate with its block removed keeps `key_id`, so keeps its payload and its name; Conformance.md §5 now lists the with-block and without-block renderings as separate cases | `store/signed-non-canonical`, `store/signed-non-canonical-no-block` |
 | Transport.md §2.3 let a producer keep an existing file under the final name because "for a signed one either signature verifies over the same payload" — but the name is the payload's hash and the signature block is outside the payload, so a signed certificate and the same record without its block share a name, and keeping the existing file could discard the signature. §2.4 likewise evaluated a name found in both roots "once" without saying which copy. | A producer writing a signed copy always replaces the existing file, whose signature may be absent, emptied or failing; an unsigned write may keep it; a reader evaluates every copy of a name that is not byte-identical to one already evaluated, so no copy hides another — Transport.md §2.3, §2.4 | `store/signed-non-canonical-no-block` |
 | Is `manifest-v1`'s path order "not git's tree order"? Content-Id.md §4.2 said so, but git's recursive tree order — which sorts a directory as if its name ended in `/` — *is* full-path byte order: `git ls-tree -r` lists `a.b`, `a/b`, `a0`, exactly as `manifest-v1` does. The order that differs is a walk sorting each directory's names on their own, which emits `a/b` first. | Byte order of the full path, which coincides with git's listing order and differs from a per-directory walk — Content-Id.md §4.2, Conformance.md §3 | `content/byte-order` |
+| Transport.md §3.1 required unambiguous framing but named no delimiter or record form — implementations invented their own (reprobuild used `# --- reprobuild-certificate ---`). | A fixed delimiter line, `# --- test-certificate ---`, before every record, and records in canonical form so the delimiter cannot occur inside one; a reader splits on whole lines and reports and skips a piece that does not parse — Transport.md §3.1, Tooling.md | every `notes/` vector |
+| Transport.md §3.1, as first fixed, told a reader to drop "the empty piece before the first" delimiter without saying what to do when it is not empty, said nothing about what lies between records, and said nothing about where a writer puts a new or replacing record — so two conforming writers could produce different blobs for the same note. | A non-empty leading piece is reported and skipped, never parsed; nothing lies between a record's last LF and the next delimiter; a new record is appended, a replacement takes the replaced record's place, and every other piece is kept byte for byte — Transport.md §3.1 | `notes/foreign-preamble`, `notes/appended`, `notes/signed-replaces-unsigned` |
+| Transport.md §3.1 replaced a present record only when "the new copy is signed and the present one is not, … as in the local store (§2.3)" — but §2.3 has a signing producer replace the existing copy whatever its block, since a present signature may fail. | As in §2.3: a signed copy replaces the present one, whose signature may be absent or may fail; an unsigned copy never replaces — Transport.md §3.1 | `notes/signed-replaces-unsigned`, `notes/unsigned-copy-not-added` |
 | Does Content-Id.md §4.1's recipe (`cp` the index, `git add --update`, `git write-tree`) see every working-tree change? It did not: in the copy, git trusted stat data that the user's index would have re-checked — a same-size edit in the second of the last index write read as clean, so the digest named the old content (found by a 1-in-3 flake in a producer's status display). | The copy is dated one second after the epoch and the filesystem monitor is off, so git compares every tracked file's content — Content-Id.md §4.1 | (none: a vector's file timestamps do not survive `git archive`, so the state cannot be shipped; producers test it with explicit timestamps) |
 
 ## Cases beyond the required set
 
 Conformance.md requires 16 payload cases, 7 content-id cases, 13
-verification cases and 6 store-path cases, and itself lists the cases below
+verification cases, 6 store-path cases and 9 note-framing cases, and itself
+lists the cases below
 that go beyond them. Each is marked as such in its `pins.md`:
 
 | Case | Why |
@@ -451,11 +511,14 @@ Stated so that nobody mistakes a gap for a guarantee:
   them is tested.
 - **Framework-specific validity.** By construction: Verification.md §4.2 says
   there is nothing generic to test there.
-- **Transport, beyond the store layout.** The `store/` group pins where
-  [Transport.md §2.2](../Transport.md#22-layout) puts a certificate. Root
-  resolution (§2.1) depends on the environment, and atomic writing, reading
-  both roots and pruning (§2.3–§2.5) on a live file system; git notes (§3) on a
-  live repository. None of them is a vector.
+- **Transport, beyond the store layout and note framing.** The `store/` group
+  pins where [Transport.md §2.2](../Transport.md#22-layout) puts a certificate,
+  and the `notes/` group how §3.1 frames several in one note. Root resolution
+  (§2.1) depends on the environment, and atomic writing, reading both roots
+  and pruning (§2.3–§2.5) on a live file system; finding a note by tree id,
+  pushing, fetching and merging the notes ref (§3, Tooling.md) on a live
+  repository. None of them is a vector — in particular, the order of records
+  after a merge of two sides' notes is not pinned.
 - **Store paths for unusual content ids.** Every `store/` certificate carries a
   well-formed id in an algorithm Content-Id.md §4 defines. A producer MUST NOT
   emit any other (Content-Id.md §1), so there is no path to pin for one.
@@ -470,6 +533,6 @@ They exist so that the vectors themselves can be checked and re-derived.
 **No implementation is required to read, port or invoke any of them**, and
 nothing in `tools/` is normative. Where a tool and the prose disagree, the prose
 wins and the tool is a bug. `tools/walk-vectors.sh` is worth a look anyway: it
-walks all five groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git`
+walks all six groups with nothing but POSIX shell, `jq`, `ssh-keygen`, `git`
 and `sha256sum`, which is the concrete demonstration that this suite needs no
 language-specific tooling.

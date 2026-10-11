@@ -59,7 +59,7 @@ project whose tooling already uses a vendor ref keeps it.
 
 | Command | Does |
 | ------- | ---- |
-| `test-certificates notes publish <commit>…` | For each commit, finds the store's certificates for `<commit>^{tree}` and adds them to the note on that tree oid, framed per Transport §3.1. Records already in the note are kept; a record is identified by its payload hash, so publishing twice adds nothing. Accepts revision ranges. Writes the local ref only. |
+| `test-certificates notes publish <commit>…` | For each commit, finds the store's certificates for `<commit>^{tree}` and adds them to the note on that tree oid, framed per Transport §3.1 (canonical records, each preceded by the `# --- test-certificate ---` delimiter line). Records already in the note are kept; a record is identified by its payload hash, so publishing twice adds nothing. Accepts revision ranges. Writes the local ref only. |
 | `test-certificates notes import [<commit>…]` | The reverse: copies certificates from the notes on each commit's tree (default `HEAD`) into the user root. A fresh clone, or a reviewer's machine, gets the certificates that travelled with a push. |
 | `test-certificates notes push <remote>` | Pushes the notes ref. When the remote ref has moved, fetches it, merges with the union of both sides' records — never one side's — and retries a bounded number of times. |
 | `test-certificates notes fetch <remote>` | Fetches the remote notes ref into the local one, merging the same way. |

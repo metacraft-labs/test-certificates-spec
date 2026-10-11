@@ -20,7 +20,7 @@ the thing this repository exists to replace.
 | `ssh_sig.py` | Thin wrapper over `ssh-keygen -Y sign` / `-Y verify`, and the armor ⇄ base64 conversion. |
 | `regenerate.py` | Re-derives every signature and rebuilds `vectors/index.json`. Idempotent; `--check` fails if anything would change. |
 | `check.py` | Runs the reference tools over the whole suite. |
-| `walk-vectors.sh` | Walks all five groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
+| `walk-vectors.sh` | Walks all six groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
 | `corruption-demo.sh` | Damages one byte at a time and asserts the checks go red. |
 
 ## Running them
@@ -77,3 +77,14 @@ Signatures are the exception. They cannot be authored by hand, so
 has them (`signature/` and `store/`), and editing only the signature `value` in
 a store certificate so its deliberately non-canonical rendering survives —
 deterministically, so re-running it over unchanged inputs is a no-op.
+
+The notes in `vectors/notes/` were assembled by hand from the same
+hand-derived payloads: each `note.txt`, `add.txt` and `expected-note.txt` is
+delimiter lines and copies of `vectors/payload/*/canonical.txt`, plus one
+record written by hand for `escaped-newline` and one truncated by hand for
+`corrupt-middle`; `regenerate.py` then fills in only the signature `value`s,
+over the bytes before each signature table. `check.py` re-reads every note
+with a TOML parser, rebuilding each payload from the parsed fields, and runs a
+reference writer over each writer case; `walk-vectors.sh` splits the notes
+with `awk` and recognises records by a line grammar of the canonical form,
+with no TOML parser at all.

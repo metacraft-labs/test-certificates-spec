@@ -300,10 +300,49 @@ carriers (§4).
 
 ### 3.1 Multiple records in one note
 
-When several certificates share a note blob, they MUST be framed so a reader can
-split them unambiguously without parsing TOML — a delimiter line that cannot
-occur inside a certificate. Implementations MUST NOT rely on blank-line
-separation, since a certificate may legitimately contain blank lines.
+Several certificates share one note blob whenever several frameworks,
+platforms or partial runs attest the same content. Every tool that writes or
+reads the note — any producer, the reference tooling, any verifier — must split
+it the same way, so the framing is fixed:
+
+- Each record in a note is written as its **canonical payload**
+  ([Canonical-Payload §2](./Canonical-Payload.md#2-structure)), followed, when
+  signed, by one blank line and the `[certificate.signature]` table with
+  `algorithm` and `value`, in that order, in the payload's formatting rules.
+  Nothing else: no comments, no multi-line strings, no other tables.
+- Every record is **preceded** by the delimiter line
+
+  ```
+  # --- test-certificate ---
+  ```
+
+  exactly, followed by LF. The blob begins with a delimiter line; there is no
+  delimiter after the last record, and nothing — not even a blank line — lies
+  between the LF that ends one record and the delimiter before the next.
+- A reader splits the blob on lines equal to the delimiter, drops the empty
+  piece before the first one, and parses each remaining piece as one
+  certificate. A piece that does not parse is reported and skipped; it does
+  not invalidate its neighbours. A **non-empty** piece before the first
+  delimiter — a blob framed some other way, or not framed at all — is
+  reported and skipped in the same way, and never parsed as a record, even
+  when it would parse. Lines end at LF, and a CR belongs to its line: a blob
+  written with CRLF line endings has no delimiter line, so all of it is such a
+  leading piece.
+
+Writing records in canonical form is what makes the delimiter safe. Every line
+of a canonical record is blank, a table header or `key = value`, and every
+newline inside a value is escaped, so no line of a record can equal the
+delimiter. Blank-line separation would not work, since a certificate
+legitimately contains blank lines between its tables.
+
+Two records whose payloads are byte-identical are the same claim. A writer
+adding a record to a note MUST NOT add one whose payload is already present. If
+the new copy is signed, it MUST replace the present one, whose signature may be
+absent or may fail, as in the local store (§2.3); an unsigned copy never
+replaces a present one. A writer changes nothing else: a new record goes after
+the last piece, behind its own delimiter; a replacement takes the replaced
+record's place; and every other piece — a record it did not touch, one it
+could not parse, or text before the first delimiter — is kept byte for byte.
 
 ## 4. Other carriers
 
