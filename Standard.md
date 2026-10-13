@@ -398,7 +398,7 @@ The one rule about *issuance* the standard states, because it determines what a
 signature is worth rather than being local policy:
 
 > A conforming producer MUST make a signature obtainable **only** as a
-> consequence of having actually executed the attested commands. It MUST NOT
+> consequence of the attested commands having actually executed. It MUST NOT
 > expose any interface that signs a caller-supplied record.
 
 A "sign this blob" entry point makes every certificate from that producer
@@ -409,6 +409,32 @@ correctly.
 How *much* that guarantee is worth is a deployment property (see the README): it
 depends on whether the tested code can reach the signing key. The rule above is
 what makes it meaningful at all, at any strength.
+
+#### 6.2.1 Reusing a recorded execution
+
+A framework with content-based incremental testing does not re-run a command
+whose inputs have not changed (§3.2.2). It reuses a record of the earlier
+execution instead. That record satisfies §6.2: the command did execute, over
+the same inputs. A producer MAY therefore attest a command whose result it
+reused, provided all of the following hold:
+
+- **The record covers the inputs.** It was produced by an execution whose
+  inputs, as the framework observed them, are byte-identical to the inputs the
+  command would read in the content being certified. Re-using a result after an
+  input changed attests a run that never happened.
+- **The record came from an execution the producer trusts.** That means one the
+  producer itself observed, or one whose record is signed by a key the
+  producer's project has registered for that purpose. The trust decision is the
+  project's, like the trust in certificate keys (Verification §3). A record
+  from an unauthenticated shared cache is a caller-supplied claim, and §6.2
+  forbids signing it.
+- **The record reports success.** A reused failure is a failure.
+
+The certificate's `[[certificate.command]]` entries still list the commands
+the claim rests on, reused or not. A reused command is not marked differently.
+The certificate attests that the commands passed over this content, not when
+or where they ran. Where provenance matters, it belongs in the trust the
+consumer places in the producer's key, not in the record.
 
 ## 7. Conformance
 
