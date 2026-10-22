@@ -132,7 +132,21 @@ the runner holds directly. The record does not change; the trust does.
 
 ## Status
 
-Extracted from reprobuild's test-certificate design, whose implementation is
-the first conforming producer. The vendor-neutral core is
+Draft v1. Extracted from reprobuild's test-certificate design, whose
+implementation is the first conforming producer. The vendor-neutral core is
 defined here; reprobuild's issuance preconditions, push gate, CI fast-tracking
 and per-project policy remain in that project's own specifications.
+
+## Contributing
+
+Changes to the prose and to the vectors land together: a rule the vectors do
+not pin is a rule implementations will drift on. Read
+[Conformance.md §Maintaining the vectors](./Conformance.md#maintaining-the-vectors)
+and the directory contract in [vectors/README.md](./vectors/README.md) before
+editing either, and run the
+checks described in [tools/README.md](./tools/README.md). Agents start at
+[AGENTS.md](./AGENTS.md).
+
+## License
+
+Licensed under the [Apache License, Version 2.0](./LICENSE).
