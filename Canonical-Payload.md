@@ -156,8 +156,9 @@ five above, or `U+007F`, has no canonical form. Producers MUST NOT emit one; a
 verifier encountering one MUST reject the record as malformed rather than invent
 an escape for it. Inventing one would be a repair, which §5 forbids.
 
-**No normalization is applied.** Values are emitted as the exact sequence of
-code points parsed. A precomposed `é` (`U+00E9`) and a decomposed `e` +
+**No Unicode normalization is applied.** After reading physical newlines as
+§5 requires, values are emitted as the exact sequence of code points parsed.
+A precomposed `é` (`U+00E9`) and a decomposed `e` +
 `U+0301` are different values: they are not folded together, not deduplicated
 against each other in `targets`, and they sort by their bytes like anything
 else. Normalizing would silently change what a signature covers.
@@ -170,6 +171,22 @@ in whitespace, key order or escaping while parsing to identical values;
 signature checking has to happen against the canonical rendering of those
 values, or a cosmetically reformatted certificate would fail against its own
 valid signature.
+
+**Physical newlines in multi-line strings MUST be read as LF**, on every
+platform, whether the received document uses LF or CRLF. This applies to
+both TOML multi-line basic strings and multi-line literal strings, including
+strings inside arrays. TOML's permission to choose a platform-specific newline
+normalization does not apply to this standard. TOML's rules for trimming an
+initial newline and, in multi-line basic strings, line-ending backslash
+continuations still apply.
+
+This rule concerns physical newlines in the source, **not characters produced
+by escapes**. For example, `\r` and `\u000D` still produce CR, and `\r\n`
+still produces CR followed by LF; §4 emits them as `\r` and `\r\n`,
+respectively. An implementation MUST preserve this distinction while parsing;
+replacing CRLF in all decoded string values would silently change escaped
+values and is forbidden. A parser that already reads physical newlines as LF
+needs no additional conversion.
 
 Equally, a verifier MUST NOT "repair" a payload into validity: if the canonical
 rendering of the parsed fields does not verify, the certificate does not verify.

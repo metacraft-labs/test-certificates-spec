@@ -121,13 +121,17 @@ deliberately non-canonical rendering of the *same field values*. It uses CRLF
 line endings, aligned `=`, tables and keys in a different order, a TOML literal
 string, `\uXXXX` escapes, and an empty signature block.
 
-Parsing it MUST produce exactly `canonical.txt`. This is the requirement in
+`vectors/payload/crlf-multiline/received.toml` additionally uses multi-line
+basic and literal strings containing physical CRLF newlines, which MUST be
+read as LF. Escaped CR and CRLF in the same document MUST remain unchanged.
+
+Parsing each `received.toml` MUST produce its case's exact `canonical.txt`. This is the requirement in
 Canonical-Payload.md §5: a verifier reconstructs the payload **from the parsed
 fields**, never by slicing the received file, or a cosmetically reformatted
 certificate would fail against its own valid signature.
 
-An implementation with no TOML parser can skip this file. One with a TOML
-parser should not.
+An implementation with no TOML parser can skip `received.toml` files. An
+implementation with a TOML parser MUST check every one.
 
 ## Group 2: `signature/`
 
@@ -449,7 +453,8 @@ about note framing while adding the `notes/` group:
 | --------- | ---------- | ------ |
 | Is `targets` sorted on the raw value bytes or on the escaped rendering? They differ for values containing escapes. | Raw value bytes, before escaping — Canonical-Payload.md §3 | `payload/escapes` |
 | What happens to a control character with no escape in the table? §4 says "no other character is escaped", but TOML basic strings cannot carry one raw. | Not representable, therefore malformed — Canonical-Payload.md §4 | (a rejection case, not a serialization one) |
-| Is Unicode normalization applied anywhere? | No; values are the exact code points parsed — Canonical-Payload.md §4 | `payload/non-ascii-literal` |
+| Is Unicode normalization applied anywhere? | No; after the physical newline rule in §5, values are the exact code points parsed — Canonical-Payload.md §4 | `payload/non-ascii-literal` |
+| May a TOML reader choose platform-specific newlines inside multi-line strings? | No; physical LF and CRLF are read as LF, while escaped CR and CRLF are preserved — Canonical-Payload.md §5 | `payload/crlf-multiline` |
 | Is `issued_at` a quoted string or a TOML datetime, and is `Z` required over `+00:00`? | A basic string, copied verbatim; `Z` — Canonical-Payload.md §2 | every payload vector |
 | May `targets` or `argv` be empty? | No; at least one each — Canonical-Payload.md §2, §3 | (a rejection case) |
 | How is `signature.value` base64 framed — padding, line wrapping? | RFC 4648 §4, padded, single line — Standard.md §6.1 | every `signature/` vector |
@@ -471,7 +476,7 @@ about note framing while adding the `notes/` group:
 
 ## Cases beyond the required set
 
-Conformance.md requires 16 payload cases, 7 content-id cases, 13
+Conformance.md requires 17 payload cases, 7 content-id cases, 13
 verification cases, 6 store-path cases and 9 note-framing cases, and itself
 lists the cases below
 that go beyond them. Each is marked as such in its `pins.md`:
@@ -489,8 +494,8 @@ that go beyond them. Each is marked as such in its `pins.md`:
 Stated so that nobody mistakes a gap for a guarantee:
 
 - **Reformatting tolerance in the `verify/` group.** Every certificate there is
-  in canonical form. Only `payload/escapes/received.toml` exercises
-  Canonical-Payload.md §5.
+  in canonical form. `payload/escapes/received.toml` and
+  `payload/crlf-multiline/received.toml` exercise Canonical-Payload.md §5.
 - **Rejection cases as a group.** Malformed records appear only where a
   decision depends on them (`verify/content-malformed`,
   `verify/earlier-draft-record`). There is no systematic "these records MUST be

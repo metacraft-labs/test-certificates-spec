@@ -37,6 +37,9 @@ vectors/payload/<name>/
 ```
 
 An implementation passes by serializing `fields.json` and comparing bytes.
+An implementation with a TOML reader MUST also reconstruct `canonical.txt`
+from each supplied `received.toml`, including the physical newline and escape
+distinction in `crlf-multiline`.
 
 Required coverage — every one of these is a place the prose can be misread:
 
@@ -49,6 +52,7 @@ Required coverage — every one of these is a place the prose can be misread:
 | `targets-single` | One target, no separator |
 | `targets-unicode` | Sorting is by UTF-8 **bytes**, not by collation |
 | `escapes` | Every escape in the table, and only those |
+| `crlf-multiline` | Physical CRLF in multi-line basic and literal strings becomes LF; escaped CR and CRLF remain unchanged |
 | `non-ascii-literal` | UTF-8 emitted literally, never `\uXXXX` |
 | `multiple-commands` | Execution order preserved, not sorted |
 | `argv-duplicates` | Repeated arguments retained |

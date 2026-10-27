@@ -20,6 +20,10 @@
         "pins": "`content` is emitted **verbatim**, whatever its algorithm — here `manifest-v1-sha256`, the non-git one — and `base` is absent."
       },
       {
+        "name": "crlf-multiline",
+        "pins": "A physical newline inside a multi-line basic or literal string is LF regardless of the document's line endings; escaped CR and CRLF values are preserved (Canonical-Payload.md §5, §4)."
+      },
+      {
         "name": "escapes",
         "pins": "every escape in the table, only those escapes, and the fact that sorting happens **before** escaping."
       },

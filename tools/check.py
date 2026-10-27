@@ -55,6 +55,7 @@ REQUIRED_PAYLOAD = [
     "targets-single", "targets-unicode", "escapes", "non-ascii-literal",
     "multiple-commands", "argv-duplicates", "argv-empty-string", "scoped",
     "unscoped", "base-present", "content-manifest", "untracked-true",
+    "crlf-multiline",
 ]
 REQUIRED_CONTENT = [
     "order-independent", "byte-order", "modes", "scope-keeps-paths",
@@ -154,6 +155,30 @@ def check_payload(r: Results) -> None:
             r.check(got == want, f"payload/{name} received.toml -> canonical",
                     "a non-canonical rendering of the same values must "
                     "reconstruct to the same payload (Canonical-Payload.md §5)")
+
+
+    # Pin the reason for crlf-multiline independently of the serializer: a
+    # canonical-only case or a rewritten LF input would no longer test §5.
+    received = os.path.join(VECTORS, "payload", "crlf-multiline",
+                            "received.toml")
+    r.check(os.path.isfile(received),
+            "payload/crlf-multiline has the required received.toml")
+    if os.path.isfile(received):
+        with open(received, "rb") as f:
+            raw = f.read()
+        r.check(b'"""\r\nx\r\ny"""' in raw
+                and b"'''\r\nx\r\ny'''" in raw
+                and b"\r\n" in raw
+                and b"\n" not in raw.replace(b"\r\n", b""),
+                "payload/crlf-multiline uses physical CRLF in both string styles")
+        cert = tomllib.loads(raw.decode("utf-8"))["certificate"]
+        r.check(cert["project"] == cert["issuer"] == "x\ny",
+                "payload/crlf-multiline physical newlines read as LF")
+        r.check(b'"a\\rb"' in raw and b'"""a\\u000Db"""' in raw
+                and b'"""a\\r\\nb"""' in raw
+                and cert["command"][0]["argv"]
+                == ["example-test", "a\rb", "a\rb", "a\r\nb"],
+                "payload/crlf-multiline preserves escaped CR and CRLF")
 
 
 def first_diff(a: bytes, b: bytes) -> int:
