@@ -40,12 +40,28 @@ Each implements the corresponding part of
 | ------- | ---- |
 | `test-certificates store-root` | Prints the resolved user root and system root (Transport §2.1). |
 | `test-certificates put <file>…` | Parses each file as a certificate, requires a well-formed `content`, and writes it atomically under its §2.2 name to the user root — or, with `--system <user>`, to that user's system root, for a privileged producer with no client (Transport §2.3). Prints each resulting path. For producers that would rather not implement §2.3 themselves, and for the client half of a daemon's delivery: the client pipes the certificate the daemon returned into `put -`. |
-| `test-certificates find <state> [--paths <p>…]` | Prints the paths of the candidate certificates stored for a state's content id, from both roots. `<state>` is `--content <id>`, `--commit <rev>`, `--staged` or `--worktree`; the last three compute the content id as [Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation) prescribes, with the repository's `git-tree-*` algorithm unless `--algorithm` says otherwise, scoped by `--paths`. Exit 0 when candidates exist, 1 when none were found, 2 when the content id could not be computed. |
+| `test-certificates find <state> [--paths <p>…]` | Prints the paths of the candidate certificates stored for a state's content id, from both roots. `<state>` is `--content <id>`, `--commit <rev>`, `--staged` or `--worktree`; the last three compute the content id as [Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation) prescribes, with the repository's `git-tree-*` algorithm unless `--algorithm` says otherwise, scoped by `--paths`. The exit statuses and their precedence are defined below. |
 | `test-certificates prune [--keep <n>] [--system <user>]` | Removes content directories beyond the newest `n` (default 20) from the user root — or from a system partition, when run by its owner — never the one for the current repository's `HEAD^{tree}`; each is renamed aside to a `.`-prefixed name, then deleted, and leftovers of an interrupted prune are deleted too (Transport §2.5). |
 
 `find` reports what it searched — both roots, the content id, the directories — so
 "nothing found" can be told apart from "looked in the wrong place"
 ([Transport §5](./Transport.md#5-discovery)).
+
+`find` uses the following exit statuses, in this order of precedence:
+
+| Exit | Meaning |
+| ---- | ------- |
+| 64 | Usage error: missing or multiple state flags, an unknown argument, a missing option operand (including an empty `--paths`), or `--paths` / `--algorithm` with `--content`. Syntax is checked before computing an id or searching. |
+| 2 | The content id could not be computed or an explicit `--content` id is malformed; neither root was searched. |
+| 0 | At least one candidate was found, including when the other root could not be read or resolved. The problem is still reported. |
+| 3 | No candidate was found and at least one root could not be read or resolved. A directory that cannot be read on the way to or at the content directory makes that root's search incomplete too. |
+| 1 | No candidate was found and both roots were searched without a root resolution or directory reading failure. A missing root, missing content directory or empty directory counts as a completed empty search. |
+
+An unreadable root does not stop the search of the other root. Status 3 says
+that discovery was incomplete; it does not prove there are no certificates.
+The library exposes the same distinction between a completed empty search and
+an incomplete empty search. These statuses concern discovery, never whether a
+candidate verifies (§1).
 
 ## 3. Propagating through git notes
 
