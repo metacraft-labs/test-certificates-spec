@@ -110,6 +110,12 @@ project whose tooling already uses a vendor ref keeps it.
 | `test-certificates notes push <remote>` | Pushes the notes ref. When the remote ref has moved, fetches it, merges with the union of both sides' records — never one side's — and retries a bounded number of times. |
 | `test-certificates notes fetch <remote>` | Fetches the remote notes ref into the local one, merging the same way. |
 
+`notes push` runs the repository's `pre-push` hook like any ordinary git
+push; it does not pass `--no-verify`. A caller that is itself a `pre-push`
+hook must suppress that invocation with `--no-verify` instead (§4). The
+library exposes this choice as `PushOptions.runHooks`, true by default;
+the hook sets it to false.
+
 For an identical payload, record publication, import and merging apply the
 relay replacement rule (Transport §2.3, §3.1). A signed copy upgrades an
 unsigned one, but a differing signed copy never replaces an existing signed
@@ -126,11 +132,21 @@ A merge that let one side win would silently delete the other's certificates.
 ## 4. Hooks
 
 `test-certificates hook pre-push` is a complete pre-push hook body. It reads the
-refs being pushed from standard input, as git supplies them, publishes notes for
-every commit the push introduces, and pushes the notes ref to the same remote
-with `--no-verify`, so it does not recurse. It never fails the push it is
-attached to: a certificate that could not be propagated is reported, and the
-receiving gate decides what that means.
+refs being pushed from standard input, as git supplies them. Before discovering
+introduced commits, it ignores each input entry whose local ref or remote ref
+is the configured notes ref (§3), or is any ref under `refs/notes/`.
+This includes other tools' notes refs, and applies even when the source and
+destination ref names differ. Notes commits describe the carrier, not the
+project content being certified.
+
+If only such entries are pushed, the hook succeeds without publishing notes
+or pushing any ref. In particular, a user's `notes push` must not trigger
+another push of the same notes ref from inside its hook: that would race the
+outer push. In a mixed push, only the remaining entries contribute introduced
+commits. For those commits the hook publishes notes, then pushes the notes ref
+to the same remote with `--no-verify`, so it does not recurse. It never fails
+the push it is attached to: a certificate that could not be propagated is
+reported, and the receiving gate decides what that means.
 
 It composes with other hooks the same way any hook body does; projects that
 already have a pre-push hook — reprobuild's managed dispatcher, for one — call it
@@ -154,3 +170,19 @@ The tool's store paths are checked by the `store/` vector group
 ([Conformance §5](./Conformance.md#5-store-path-vectors)), like any
 implementation's. Its notes handling is tested against real git repositories,
 including concurrent publishers whose records must all survive a merge.
+
+The hook and `notes push` tests also use real git repositories. Required cases
+for the §3/§4 distinction are:
+
+| Case | Expected behaviour |
+| ---- | ------------------ |
+| A user runs `notes push` with a refusing repository `pre-push` hook. | The hook runs and the notes push fails; the remote notes ref is unchanged. |
+| A hook calls the library notes push with `PushOptions.runHooks = false`. | Its inner push uses `--no-verify` and does not invoke the repository hook again. |
+| The only pushed ref is the default or a configured notes ref. | The propagation hook succeeds without publishing notes or starting another push. |
+| Only unrelated refs under `refs/notes/` are pushed. | The same no-op applies; exclusion is not limited to the certificate notes ref. |
+| A branch and a notes ref are pushed together. | Only the branch's introduced commits contribute certificates; the hook's notes push suppresses hooks. |
+| A refspec has a notes ref on only its local or only its remote side. | That entry is ignored in either direction, including for a configured notes ref outside `refs/notes/`. |
+
+The no-op cases must check that neither publication nor an inner push occurred,
+rather than just checking a successful exit status: the hook also succeeds
+after reporting a propagation failure.
