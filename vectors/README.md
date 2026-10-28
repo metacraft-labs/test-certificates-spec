@@ -457,6 +457,7 @@ about note framing while adding the `notes/` group:
 
 | Ambiguity | Resolution | Vector |
 | --------- | ---------- | ------ |
+| Can an unknown algorithm contain path syntax or a non-portable directory name, and may a relay store it? | Algorithm identifiers are 1–64 lowercase ASCII letters, digits or hyphens, excluding Windows device names; invalid names are malformed. Relays and explicit lookups accept unknown well-formed ids verbatim, although producers cannot issue them — Content-Id §1, Transport §2.2, Tooling §2 | `verify/content-algorithm-name`, `store/unknown-algorithm` |
 | Is `targets` sorted on the raw value bytes or on the escaped rendering? They differ for values containing escapes. | Raw value bytes, before escaping — Canonical-Payload.md §3 | `payload/escapes` |
 | What happens to a control character with no escape in the table? §4 says "no other character is escaped", but TOML basic strings cannot carry one raw. | Not representable, therefore malformed — Canonical-Payload.md §4 | (a rejection case, not a serialization one) |
 | Is Unicode normalization applied anywhere? | No; after the physical newline rule in §5, values are the exact code points parsed — Canonical-Payload.md §4 | `payload/non-ascii-literal` |
@@ -486,8 +487,8 @@ about note framing while adding the `notes/` group:
 
 ## Cases beyond the required set
 
-Conformance.md requires 17 payload cases, 7 content-id cases, 13
-verification cases, 6 store-path cases and 11 note-framing cases, and itself
+Conformance.md requires 17 payload cases, 7 content-id cases, 14
+verification cases, 7 store-path cases and 11 note-framing cases, and itself
 lists the cases below
 that go beyond them. Each is marked as such in its `pins.md`:
 
@@ -538,9 +539,8 @@ Stated so that nobody mistakes a gap for a guarantee:
   In particular, Transport §2.5's protection of computed `HEAD` ids includes
   declared scopes and multiple algorithms; the live-repository checks in
   Conformance §5, rather than a store-path vector, pin that pruning policy.
-- **Store paths for unusual content ids.** Every `store/` certificate carries a
-  well-formed id in an algorithm Content-Id.md §4 defines. A producer MUST NOT
-  emit any other (Content-Id.md §1), so there is no path to pin for one.
+- **Issuing unknown content algorithms.** `store/unknown-algorithm` pins relay
+  layout, not issuance; Content-Id §1 still forbids issuing such a claim.
 
 ## The tools directory is not part of the suite
 

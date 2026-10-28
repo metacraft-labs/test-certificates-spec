@@ -20,6 +20,10 @@
         "pins": "`content` is emitted **verbatim**, whatever its algorithm — here `manifest-v1-sha256`, the non-git one — and `base` is absent."
       },
       {
+        "name": "content-unknown-algorithm",
+        "pins": "Canonical-Payload §2 copies a well-formed unknown content identifier verbatim."
+      },
+      {
         "name": "crlf-multiline",
         "pins": "A physical newline inside a multi-line basic or literal string is LF regardless of the document's line endings; escaped CR and CRLF values are preserved (Canonical-Payload.md §5, §4)."
       },
@@ -130,6 +134,10 @@
     ],
     "verify": [
       {
+        "name": "content-algorithm-name",
+        "pins": "Content-Id §1: invalid algorithm identifiers are malformed, even with a lowercase hexadecimal digest; they must not become unverifiable claims or store path components."
+      },
+      {
         "name": "content-differs",
         "pins": "the content comparison is an equality test, failing it is an ordinary not-covered — and a `base` equal to the commit under evaluation does not rescue it."
       },
@@ -222,6 +230,10 @@
       {
         "name": "signed-non-canonical-no-block",
         "pins": "removing a signed certificate's signature block does not change its name — `key_id` is part of the payload and stays, the block never was — so the stripped copy and the signed one land on the same name."
+      },
+      {
+        "name": "unknown-algorithm",
+        "pins": "Transport §2.2 and Tooling §2: a relay stores a well-formed unknown algorithm and digest verbatim, without computing the algorithm."
       },
       {
         "name": "unsigned",

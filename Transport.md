@@ -111,6 +111,9 @@ when it needs others.
   `content`, split at the first `:`
   ([Content-Id §1](./Content-Id.md#1-form)). The id is split rather than used
   as one name because `:` is not a legal file-name character on Windows.
+  Writers and readers MUST validate the id under Content-Id §1 before
+  constructing a path. A well-formed unknown algorithm is stored and looked
+  up verbatim; an invalid algorithm identifier MUST NOT name a directory.
 - `<payload-hash>` is the lowercase hex SHA-256 of the certificate's
   **canonical payload** ([Canonical-Payload](./Canonical-Payload.md)) — the
   bytes a signature covers, which excludes the signature block.

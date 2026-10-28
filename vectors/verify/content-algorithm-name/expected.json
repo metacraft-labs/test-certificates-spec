@@ -1,0 +1,92 @@
+{
+  "outcome": "not-covered",
+  "reason": "every candidate carries a malformed content id; each is decidably invalid and none may be repaired into the id it was probably meant to be",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "00-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "01-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "02-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "03-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "04-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "05-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "06-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "07-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "08-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "09-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "10-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "11-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "12-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "13-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "14-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "15-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "16-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "17-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    },
+    {
+      "certificate": "18-invalid.toml",
+      "why": "malformed content id: algorithm identifier is not portable"
+    }
+  ]
+}

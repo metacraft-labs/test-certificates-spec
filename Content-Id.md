@@ -18,15 +18,20 @@ then the digest.
 <algorithm>:<digest>
 ```
 
-- `<algorithm>` is one of the identifiers in §4, compared by exact string
-  equality.
+- `<algorithm>` is 1–64 ASCII characters from `a`–`z`, `0`–`9` and `-`,
+  compared by exact string equality. The identifiers `con`, `prn`, `aux`,
+  `nul`, `com1`–`com9` and `lpt1`–`lpt9` are forbidden. These restrictions
+  make the identifier a portable directory component in the local store
+  ([Transport §2.2](./Transport.md#22-layout)): no separators, dot-names,
+  case aliases, Windows devices or oversized directory names.
 - `<digest>` is **lowercase** hexadecimal, of exactly the length the algorithm
   defines.
 
 The algorithm is everything before the **first** `:`, and the digest is
 everything after it. A content id is **malformed** when it has no `:`, nothing
-before the `:`, a digest that is empty or contains anything but `0`–`9` and
-`a`–`f`, or — for an algorithm in §4 — a digest of the wrong length. A
+before the `:`, an algorithm identifier outside the grammar above, a digest
+that is empty or contains anything but `0`–`9` and `a`–`f`, or — for an
+algorithm in §4 — a digest of the wrong length. A
 malformed id is decidably invalid
 ([Verification §4.1.1](./Verification.md#411-matching-content)). A verifier
 MUST NOT repair one into validity — by lowercasing an uppercase digest, by
@@ -36,7 +41,9 @@ assuming an algorithm for a bare digest.
 A well-formed id naming an algorithm that is **not** in §4 is not malformed.
 Its digest length cannot be judged, since only the algorithm defines it, and a
 later revision may define the algorithm. A verifier treats it as an algorithm
-it cannot compute (§5). Producers MUST NOT emit one.
+it cannot compute (§5). Producers MUST NOT issue one. Relaying an existing
+certificate does not issue a new claim: store writers and explicit content-id
+lookups MUST accept such an id without computing its algorithm or changing it.
 
 The algorithm is part of the claim. Two content ids with different algorithms
 are never compared, even where both describe the same files: a verifier

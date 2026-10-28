@@ -64,12 +64,12 @@ REQUIRED_CONTENT = [
 REQUIRED_VERIFY = [
     "coverage-union", "wrong-platform", "other-framework", "revoked-key",
     "empty-key-store", "unsigned-required", "content-matches-other-base",
-    "content-differs", "content-malformed", "content-unknown-algorithm",
+    "content-differs", "content-malformed", "content-algorithm-name", "content-unknown-algorithm",
     "earlier-draft-record", "scope-too-narrow", "unreadable-store",
 ]
 REQUIRED_STORE = [
     "unsigned", "signed", "signed-non-canonical",
-    "signed-non-canonical-no-block", "manifest-content", "scoped",
+    "signed-non-canonical-no-block", "manifest-content", "scoped", "unknown-algorithm",
 ]
 
 REQUIRED_NOTES = [
@@ -89,6 +89,7 @@ STORE_PAYLOAD_SOURCE = {
     "signed-non-canonical-no-block": "signed",
     "manifest-content": "content-manifest",
     "scoped": "scoped",
+    "unknown-algorithm": "content-unknown-algorithm",
 }
 
 # key_id -> the published public key a store certificate is verified against.

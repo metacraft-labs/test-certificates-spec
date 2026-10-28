@@ -1,0 +1,18 @@
+schema = "test-certificate.v1"
+
+[certificate]
+framework = "example-framework"
+project = "example"
+platform = "linux/amd64"
+targets = ["t-integration", "t-unit"]
+result = "passed"
+issued_at = "2026-06-23T10:14:33Z"
+issuer = "example-runner@build-host-1"
+
+[certificate.vcs]
+repo = "example"
+content = "a_b:aa"
+untracked = false
+
+[[certificate.command]]
+argv = ["example-test", "run", "--targets", "t-integration,t-unit"]

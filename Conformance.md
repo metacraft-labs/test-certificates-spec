@@ -152,6 +152,7 @@ Required coverage:
 | `content-matches-other-base` | A certificate whose `base` is not the commit under evaluation, but whose `content` matches, covers it |
 | `content-differs` | Does not cover |
 | `content-malformed` | Rejected: decidably invalid, so not covered |
+| `content-algorithm-name` | **not-covered** — non-portable algorithm identifiers are malformed before algorithm lookup |
 | `content-unknown-algorithm` | **unverifiable** — an algorithm the consumer cannot compute is not a mismatch |
 | `earlier-draft-record` | A record in the pre-2026-10-09 shape (`commit`, `clean`, no `content`) is decidably invalid: not covered |
 | `scope-too-narrow` | A scoped certificate does not satisfy a broader requirement |
@@ -210,9 +211,16 @@ Required coverage:
 | `signed-non-canonical-no-block` | `signed`'s certificate with its signature block removed, non-canonically: still `signed`'s name, since `key_id` stays in the payload and the block never was |
 | `manifest-content` | A `manifest-v1-sha256` content id |
 | `scoped` | A scoped certificate, stored under its scoped content id |
+| `unknown-algorithm` | A relay stores an opaque, well-formed unknown algorithm and one-digit digest verbatim |
 
 The suite additionally carries `unsigned-empty-block`: the empty-signature-block
 form of `unsigned` (Canonical-Payload §6), under `unsigned`'s name.
+
+Algorithm-name runtime tests must drive both `put` and `find --content`.
+Malformed prefixes must be rejected before store access; valid unknown names
+must round-trip without rewriting, including the 64-character boundary and
+names adjacent to reserved devices (`com0`, `con-v2`). Outside-store sentinels
+must remain untouched.
 
 Root resolution (Transport §2.1) depends on the environment and the platform and
 is not a vector; implementations test it at runtime. Tests must cover absolute,

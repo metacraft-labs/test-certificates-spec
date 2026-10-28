@@ -36,6 +36,11 @@ DIGEST_LENGTH = {
     "manifest-v1-sha256": 64,
 }
 
+_ALGORITHM_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+_RESERVED_ALGORITHMS = {"con", "prn", "aux", "nul"} | {
+    f"{stem}{i}" for stem in ("com", "lpt") for i in range(1, 10)
+}
+
 _HEX = frozenset("0123456789abcdef")
 _MODES = ("100644", "100755", "120000", "160000")
 
@@ -60,6 +65,9 @@ def parse(content_id: object) -> tuple[str, str]:
     algorithm, digest = content_id.split(":", 1)
     if not algorithm:
         raise Malformed(f"{content_id!r} names no algorithm")
+    if (len(algorithm) > 64 or not set(algorithm) <= _ALGORITHM_CHARS
+            or algorithm in _RESERVED_ALGORITHMS):
+        raise Malformed(f"{content_id!r}: algorithm identifier is not portable")
     if not digest or not set(digest) <= _HEX:
         raise Malformed(f"{content_id!r}: digest is not lowercase hex")
     want = DIGEST_LENGTH.get(algorithm)

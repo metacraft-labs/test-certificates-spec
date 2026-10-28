@@ -440,7 +440,10 @@ decide() { # <case dir> -> prints the outcome
     case "$cid" in *:*) ;; *) continue;; esac  # no algorithm
     alg=${cid%%:*}                             # up to the FIRST ':'
     dig=${cid#*:}
-    [ -n "$alg" ] || continue
+    [ -n "$alg" ] && [ "${#alg}" -le 64 ] || continue
+    case "$alg" in
+      *[!abcdefghijklmnopqrstuvwxyz0123456789-]*|con|prn|aux|nul|com[1-9]|lpt[1-9]) continue;;
+    esac
     case "$dig" in ''|*[!0123456789abcdef]*) continue;; esac
     case "$alg" in
       git-tree-sha1) [ "${#dig}" -eq 40 ] || continue;;

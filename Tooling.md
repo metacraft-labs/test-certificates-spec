@@ -45,6 +45,13 @@ Each implements the corresponding part of
 | `test-certificates find <state> [--paths <p>…]` | Prints the paths of the candidate certificates stored for a state's content id, from both roots. `<state>` is `--content <id>`, `--commit <rev>`, `--staged` or `--worktree`; the last three compute the content id as [Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation) prescribes, with the repository's `git-tree-*` algorithm unless `--algorithm` says otherwise, scoped by `--paths`. The exit statuses and their precedence are defined below. |
 | `test-certificates prune [--keep <n>] [--system <user>] [--paths <p>…]…` | Removes content directories beyond the newest `n` (default 20) from the user root — or from a system partition, when run by its owner — protecting the current repository's computed `HEAD` content ids as described below; each removed directory is renamed aside to a `.`-prefixed name, then deleted, and leftovers of an interrupted prune are deleted too (Transport §2.5). |
 
+`put` and `find --content` accept every well-formed content id, including an
+algorithm outside Content-Id §4. They relay and discover existing claims; they
+do not issue claims or compute an unknown algorithm. They preserve both id
+components verbatim. An invalid algorithm identifier is malformed: `put`
+refuses it before writing, and `find --content` returns 2 before searching.
+The computation forms of `find` still require an implemented algorithm.
+
 `prune` protects the unscoped `HEAD` content id in both the repository's native
 `git-tree-*` algorithm and `manifest-v1-sha256`. Each occurrence of `--paths`
 declares an additional scope: its paths are interpreted together, while repeated

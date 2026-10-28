@@ -126,8 +126,9 @@ Three outcomes besides a match:
 - **The ids differ.** The certificate does not describe this state. It is
   discarded, like a certificate for another platform: it is not evidence here,
   and it is not evidence against anything.
-- **The content id is malformed** — no `:`, a digest that is not lowercase
-  hex, a digest of the wrong length for an algorithm Content-Id §4 defines; the
+- **The content id is malformed** — no `:`, a non-portable algorithm
+  identifier, a digest that is not lowercase hex, a digest of the wrong length
+  for an algorithm Content-Id §4 defines; the
   full rule, including where the algorithm ends, is in
   [Content-Id §1](./Content-Id.md#1-form). The record is **decidably invalid**
   and is rejected, without repair.
