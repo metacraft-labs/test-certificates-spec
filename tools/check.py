@@ -24,7 +24,8 @@ Groups:
                and the SHA-256 of the payload rebuilt from the parsed fields
     notes      every note.txt splits, per Transport.md §3.1, into the records
                and skipped pieces expected.json lists; every writer case's
-               expected-note.txt is what adding add.txt to note.txt produces
+               expected-note.txt is what adding add.txt to note.txt produces;
+               merge cases compare two-blob bytes, reports and stability
     index      vectors/index.json matches what is on disk
 """
 
@@ -80,6 +81,24 @@ REQUIRED_NOTES = [
     "unterminated-preamble", "unterminated-corrupt", "unterminated-record",
     "unterminated-duplicate", "eof-delimiter", "eof-delimiter-duplicate",
     "eof-delimiter-only",
+]
+
+REQUIRED_MERGES = [
+    "merge-corrupt-lf",
+    "merge-empty-signature-upgrade",
+    "merge-eof-append",
+    "merge-eof-delimiter",
+    "merge-eof-noop",
+    "merge-leading",
+    "merge-leading-eof",
+    "merge-leading-present",
+    "merge-leading-substring",
+    "merge-order",
+    "merge-replacement-eof",
+    "merge-signed-conflict",
+    "merge-signed-duplicate",
+    "merge-signed-upgrade",
+    "merge-unsigned-downgrade",
 ]
 
 # Each store case's canonical.txt is a copy of a hand-derived payload vector,
@@ -626,15 +645,118 @@ def write_note(blob: bytes, record: bytes) -> bytes:
     return blob
 
 
+def merge_note(base: bytes, other: bytes) -> tuple[bytes, list[str]]:
+    """Transport §3.1, with exact delimiter bytes retained for untouched pieces."""
+    def split(blob):
+        spans = list(re.finditer(rb"(?m)^" + re.escape(NOTE_DELIMITER[:-1])
+                                + rb"(?:\n|\Z)", blob))
+        lead = blob[:spans[0].start()] if spans else blob
+        return lead, [[m.group(), blob[m.end():spans[i+1].start()
+                       if i+1 < len(spans) else len(blob)]]
+                      for i, m in enumerate(spans)]
+
+    lead, pieces = split(base)
+    incoming_lead, incoming = split(other)
+    reports = []
+    if incoming_lead:
+        # Match the entire incoming block, on whole-line boundaries. A suffix
+        # of a line is not present merely because its bytes occur there.
+        pattern = rb"(?:^|(?<=\n))" + re.escape(incoming_lead)
+        if not incoming_lead.endswith(b"\n"):
+            pattern += rb"(?=\n|\Z)"
+        if not re.search(pattern, lead):
+            if lead:
+                lead += b"" if lead.endswith(b"\n") else b"\n"
+                reports.append("leading-joined")
+            lead += incoming_lead
+    def repair_boundary(index):
+        # A delimiter must start on a line after the preceding piece. Repair
+        # only when an insertion/replacement actually needs that boundary.
+        nonlocal lead
+        if index == 0:
+            if lead and not lead.endswith(b"\n"):
+                lead += b"\n"
+                reports.append("lf-repair")
+        else:
+            previous = pieces[index-1]
+            raw = b"".join(previous)
+            if raw and not raw.endswith(b"\n"):
+                previous[1 if previous[1] else 0] += b"\n"
+                reports.append("lf-repair")
+    for delimiter, body in incoming:
+        parsed = parse_record(body)
+        if parsed is None:
+            def drop_lf(b):
+                return b[:-1] if b.endswith(b"\n") else b
+            if any(parse_record(p[1]) is None
+                   and drop_lf(p[1]) == drop_lf(body) for p in pieces):
+                continue
+        else:
+            matches = [(i, p) for i, p in enumerate(pieces)
+                       if (old := parse_record(p[1])) is not None
+                       and old[0] == parsed[0]]
+            if matches:
+                signed = [(i, p) for i, p in matches if parse_record(p[1])[1] is not None]
+                i, present = (signed or matches)[0]
+                if parsed[1] is not None:
+                    if signed:
+                        if present[1] != body:
+                            reports.append("signed-conflict")
+                    else:
+                        pieces[i] = [delimiter, body]
+                        if i+1 < len(pieces):
+                            repair_boundary(i+1)
+                continue
+        repair_boundary(len(pieces))
+        pieces.append([delimiter, body])
+    if pieces:
+        repair_boundary(0)
+    return lead + b"".join(d+b for d, b in pieces), reports
+
+
+def check_note_merges(r: Results) -> None:
+    """Check byte results, diagnostic categories and repeated-merge stability."""
+    for name in (n for n in cases("notes") if n.startswith("merge-")):
+        d = os.path.join(VECTORS, "notes", name)
+        def read(filename):
+            with open(os.path.join(d, filename), "rb") as f:
+                return f.read()
+        base, other, expected = map(read, ("base.txt", "other.txt", "expected-note.txt"))
+        reports = json.loads(read("expected.json"))["reports"]
+        got, diagnostics = merge_note(base, other)
+        r.check(got == expected, f"notes/{name} merge bytes",
+                f"first difference at byte {first_diff(got, expected)}")
+        r.check(diagnostics == reports, f"notes/{name} merge reports",
+                f"got {diagnostics}, expected {reports}")
+        # The expected signed records must carry real evidence; the incoming
+        # conflicts deliberately do not. Never choose a merge winner by this
+        # verification: it checks the authored vector, not the merge rule.
+        pub = open(STORE_KEYS["example-key-2026-q2"], encoding="ascii").read().strip()
+        for piece in split_note(expected)[1]:
+            parsed = parse_record(piece)
+            if parsed is not None and parsed[1] is not None:
+                ok, detail = ssh_sig.verify(parsed[0], pub, parsed[1]["value"])
+                r.check(ok, f"notes/{name} expected signed record verifies", detail)
+        if name in ("merge-signed-conflict", "merge-signed-duplicate"):
+            parsed = parse_record(split_note(other)[1][0])
+            ok, _ = ssh_sig.verify(parsed[0], pub, parsed[1]["value"])
+            r.check(not ok, f"notes/{name} incoming signature deliberately fails")
+        again, _ = merge_note(got, other)
+        r.check(again == got, f"notes/{name} repeated merge does not grow")
+
+
 def check_notes(r: Results) -> None:
     print("notes: each note splits into the records expected.json lists, "
           "and each writer case produces expected-note.txt")
     present = cases("notes")
-    missing = [c for c in REQUIRED_NOTES if c not in present]
-    r.check(not missing, f"all {len(REQUIRED_NOTES)} required cases present",
+    missing = [c for c in REQUIRED_NOTES + REQUIRED_MERGES if c not in present]
+    r.check(not missing, f"all {len(REQUIRED_NOTES + REQUIRED_MERGES)} required cases present",
             f"missing: {missing}")
+    check_note_merges(r)
     pub = open(STORE_KEYS["example-key-2026-q2"], encoding="ascii").read()
     for name in present:
+        if name.startswith("merge-"):
+            continue
         d = os.path.join(VECTORS, "notes", name)
         with open(os.path.join(d, "note.txt"), "rb") as f:
             blob = f.read()
@@ -793,6 +915,12 @@ def check_structure(r: Results) -> None:
                 f"verify/{name} has the required files")
     for name in cases("notes"):
         d = os.path.join(VECTORS, "notes", name)
+        if name.startswith("merge-"):
+            r.check(all(os.path.isfile(os.path.join(d, f)) for f in
+                        ("base.txt", "other.txt", "expected-note.txt",
+                         "expected.json", "pins.md")),
+                    f"notes/{name} has its five merge files")
+            continue
         r.check(all(os.path.exists(os.path.join(d, f))
                     for f in ("note.txt", "expected.json", "pins.md"))
                 and os.path.exists(os.path.join(d, "add.txt"))

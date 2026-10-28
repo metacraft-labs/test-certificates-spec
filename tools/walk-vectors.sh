@@ -701,14 +701,142 @@ shape_of() {
 record_shape='^schema B C framework project platform targets result issued_at issuer (key_id )?B V repo (paths )?content untracked (base )?(B M argv )+(B G algorithm value )?$'
 
 is_record() { shape_of "$1" | grep -Eq "$record_shape"; }
-is_signed() { grep -qx '\[certificate\.signature\]' "$1"; }
+is_signed() {
+  grep -qx '\[certificate\.signature\]' "$1" &&
+    [ -n "$(tval "$1" algorithm)" ] && [ -n "$(tval "$1" value)" ]
+}
+
+# Merge the canonical subset independently, using the line grammar above.
+# Exact byte slices, including EOF delimiters, come from split_note.
+merge_notes() { # <published> <incoming> <output> <reports>
+  mm_base=$1 mm_other=$2 mm_out=$3 mm_reports=$4
+  mm_n=$(split_note "$mm_base" "$tmp/mb")
+  mm_k=$(split_note "$mm_other" "$tmp/mo")
+  : > "$mm_reports"
+  if [ -s "$tmp/mo.0" ]; then
+    if ! LC_ALL=C awk -v ns="$(wc -c < "$tmp/mb.0")" -v os="$(wc -c < "$tmp/mo.0")" '
+      FILENAME == ARGV[1] { text=text $0 "\n"; next }
+      { incoming=incoming $0 "\n" }
+      END {
+        text=substr(text,1,ns); incoming=substr(incoming,1,os)
+        start=1
+        while ((at=index(substr(text,start),incoming)) > 0) {
+          at+=start-1; stop=at+length(incoming)
+          if ((at==1 || substr(text,at-1,1)=="\n") &&
+              (stop>length(text) || substr(incoming,length(incoming),1)=="\n" || substr(text,stop,1)=="\n")) exit 0
+          start=at+1
+        }
+        exit 1
+      }' "$tmp/mb.0" "$tmp/mo.0"; then
+      if [ -s "$tmp/mb.0" ]; then
+        mm_terminate "$tmp/mb.0" ''
+        printf 'leading-joined\n' >> "$mm_reports"
+      fi
+      cat "$tmp/mo.0" >> "$tmp/mb.0"
+    fi
+  fi
+  mm_i=1
+  while [ "$mm_i" -le "$mm_k" ]; do
+    mm_at=0 mm_signed=0 mm_j=1
+    if is_record "$tmp/mo.$mm_i"; then
+      cert_payload "$tmp/mo.$mm_i" > "$tmp/mm-in-payload"
+      while [ "$mm_j" -le "$mm_n" ]; do
+        if is_record "$tmp/mb.$mm_j"; then
+          cert_payload "$tmp/mb.$mm_j" > "$tmp/mm-have-payload"
+          if cmp -s "$tmp/mm-in-payload" "$tmp/mm-have-payload"; then
+            [ "$mm_at" -ne 0 ] || mm_at=$mm_j
+            if is_signed "$tmp/mb.$mm_j"; then mm_at=$mm_j mm_signed=1; break; fi
+          fi
+        fi
+        mm_j=$((mm_j+1))
+      done
+      if [ "$mm_at" -ne 0 ]; then
+        if is_signed "$tmp/mo.$mm_i"; then
+          if [ "$mm_signed" -eq 1 ]; then
+            if ! cmp -s "$tmp/mb.$mm_at" "$tmp/mo.$mm_i"; then
+              printf 'signed-conflict\n' >> "$mm_reports"
+            fi
+          else
+            cp "$tmp/mo.$mm_i" "$tmp/mb.$mm_at"
+            cp "$tmp/mo.delimiter.$mm_i" "$tmp/mb.delimiter.$mm_at"
+            if [ "$mm_at" -lt "$mm_n" ]; then mm_terminate "$tmp/mb.$mm_at" lf-repair; fi
+          fi
+        fi
+        mm_i=$((mm_i+1)); continue
+      fi
+    else
+      # Command substitution drops every terminal LF, so compare explicit
+      # slices after removing exactly one, independently of the Python code.
+      mm_strip_lf "$tmp/mo.$mm_i" "$tmp/mm-in-corrupt"
+      while [ "$mm_j" -le "$mm_n" ]; do
+        if ! is_record "$tmp/mb.$mm_j"; then
+          mm_strip_lf "$tmp/mb.$mm_j" "$tmp/mm-have-corrupt"
+          if cmp -s "$tmp/mm-in-corrupt" "$tmp/mm-have-corrupt"; then mm_at=$mm_j; break; fi
+        fi
+        mm_j=$((mm_j+1))
+      done
+      if [ "$mm_at" -ne 0 ]; then mm_i=$((mm_i+1)); continue; fi
+    fi
+    if [ "$mm_n" -eq 0 ]; then
+      mm_terminate "$tmp/mb.0" lf-repair
+    elif [ -s "$tmp/mb.$mm_n" ]; then
+      mm_terminate "$tmp/mb.$mm_n" lf-repair
+    else
+      mm_terminate "$tmp/mb.delimiter.$mm_n" lf-repair
+    fi
+    mm_n=$((mm_n+1))
+    cp "$tmp/mo.$mm_i" "$tmp/mb.$mm_n"
+    cp "$tmp/mo.delimiter.$mm_i" "$tmp/mb.delimiter.$mm_n"
+    mm_i=$((mm_i+1))
+  done
+  if [ "$mm_n" -gt 0 ]; then mm_terminate "$tmp/mb.0" lf-repair; fi
+  cat "$tmp/mb.0" > "$mm_out"
+  mm_j=1
+  while [ "$mm_j" -le "$mm_n" ]; do
+    cat "$tmp/mb.delimiter.$mm_j" "$tmp/mb.$mm_j" >> "$mm_out"
+    mm_j=$((mm_j+1))
+  done
+}
+
+mm_terminate() { # <file> <report category, or empty for leading join>
+  if [ -s "$1" ] && [ "$(tail -c 1 "$1" | od -An -c | tr -d ' ')" != '\n' ]; then
+    printf '\n' >> "$1"
+    [ -z "$2" ] || printf '%s\n' "$2" >> "$mm_reports"
+  fi
+}
+
+mm_strip_lf() {
+  mm_size=$(wc -c < "$1")
+  if [ "$mm_size" -gt 0 ] && [ "$(tail -c 1 "$1" | od -An -c | tr -d ' ')" = '\n' ]; then
+    mm_size=$((mm_size-1))
+  fi
+  dd if="$1" of="$2" bs=1 count="$mm_size" 2>/dev/null
+}
+
+walk_note_merge() {
+  merge_notes "$d/base.txt" "$d/other.txt" "$tmp/merged" "$tmp/merge-reports"
+  if cmp -s "$tmp/merged" "$d/expected-note.txt"; then ok "notes/$name merge bytes"
+  else bad "notes/$name merge bytes"; fi
+  jq -r '.reports[]' "$d/expected.json" > "$tmp/want-reports"
+  if cmp -s "$tmp/merge-reports" "$tmp/want-reports"; then ok "notes/$name merge reports"
+  else bad "notes/$name merge reports"; fi
+  cp "$tmp/merged" "$tmp/merge-first"
+  merge_notes "$tmp/merge-first" "$d/other.txt" "$tmp/merged" "$tmp/merge-reports"
+  if cmp -s "$tmp/merged" "$tmp/merge-first"; then ok "notes/$name repeated merge does not grow"
+  else bad "notes/$name repeated merge grows"; fi
+}
 
 walk_notes() {
+  for required in merge-corrupt-lf merge-empty-signature-upgrade merge-eof-append merge-eof-delimiter merge-eof-noop merge-leading merge-leading-eof merge-leading-present merge-leading-substring merge-order merge-replacement-eof merge-signed-conflict merge-signed-duplicate merge-signed-upgrade merge-unsigned-downgrade; do
+    if [ -d "$vectors/notes/$required" ]; then ok "notes/$required is present"
+    else bad "notes/$required missing required merge case"; fi
+  done
   printf 'notes: split each note with awk and compare the pieces
 '
   for d in "$vectors"/notes/*/; do
     d=${d%/}
     name=$(basename "$d")
+    case "$name" in merge-*) walk_note_merge; continue;; esac
     n=$(split_note "$d/note.txt" "$tmp/piece")
     # The pieces a reader yields: a non-empty lead first, then pieces 1…n.
     : > "$tmp/pieces"

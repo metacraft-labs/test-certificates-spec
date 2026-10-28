@@ -334,6 +334,22 @@ payload; the writer must preserve `note.txt` byte for byte without needing a
 verifier. Signing-writer replacement is a runtime test with an explicitly
 made signature, rather than a relay vector.
 
+Two-blob merges use `notes/merge-*/{base.txt,other.txt,expected-note.txt,
+expected.json,pins.md}` instead of the reader/writer layout above. An
+implementation MUST produce the exact expected bytes with `base.txt` as the
+published side, report the categories listed in `expected.json`, and leave the
+bytes unchanged when merging `other.txt` again. See the directory contract in
+[vectors/README.md](./vectors/README.md#two-blob-merge-cases).
+Required cases cover piece order and corrupt preservation (`merge-order`),
+signed upgrades and downgrades (`merge-signed-upgrade`, `merge-empty-signature-upgrade`,
+`merge-unsigned-downgrade`), reported signed ties including duplicates
+(`merge-signed-conflict`, `merge-signed-duplicate`), whole-line leading-block
+containment (`merge-leading`, `merge-leading-present`,
+`merge-leading-substring`), corrupt-piece LF equality (`merge-corrupt-lf`),
+and repaired versus preserved EOF boundaries (`merge-eof-append`,
+`merge-eof-delimiter`, `merge-eof-noop`, `merge-leading-eof`,
+`merge-replacement-eof`).
+
 Pushing, fetching and merging the notes ref, and finding a note by tree id,
 need a live repository and are not vectors. Tests must cover relaying a
 failing signature through notes publication and store import without losing

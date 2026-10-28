@@ -477,6 +477,50 @@ A notes ref update MUST compare against the ref from which the note was read,
 and retry the read and record addition if another writer moved it; an atomic
 ref update alone must not publish a decision made from a stale note.
 
+**Merging two notes.** A merge combines blobs for the same object, with the
+already published blob as **base** and the incoming blob as **other**. Neither
+side is a signing writer. The result MUST be deterministic for these ordered
+inputs; swapping base and other need not give the same bytes. In particular,
+the following rules do not promise a commutative merge or signature repair.
+
+Start with base's pieces, including its leading text, in their existing order.
+Process other's pieces in their order against the evolving result:
+
+- A parsed record whose canonical payload is absent MUST be appended with its
+  delimiter, keeping its received bytes. An unsigned copy of a present payload
+  changes nothing. A signed copy MUST replace the first matching unsigned
+  record in place, only when no signed match exists anywhere in the result.
+  Existing duplicates are preserved. If both copies are signed and their
+  record bodies differ, the existing signed copy MUST be kept and the conflict
+  reported, even if one signature fails verification. The first existing
+  signed match wins when there are several. The merge does not verify
+  signatures; “signed” has the meaning in §2.3.
+- An unparsable piece MUST be appended, with its delimiter and received bytes,
+  unless an unparsable piece with the same body is already present. For this
+  equality only, remove at most one final LF from each body. This prevents a
+  prior boundary repair from causing another copy to be appended. Delimiter
+  bytes do not participate in this equality; no other whitespace is ignored.
+- Non-empty leading text is never parsed. If no leading text is present, insert
+  other's leading block before the result's first delimiter. Otherwise keep
+  the existing text and join the incoming block after it, first supplying one
+  LF if the existing text lacks its final LF, and report that the different
+  leading text was joined. Do not join a block already present as a contiguous
+  sequence of whole lines: its first byte must start a line, and its end must
+  be the end of the existing text, follow LF, or precede LF. Compare bytes,
+  without trimming. This is containment of the entire incoming block, not
+  deduplication of its individual lines.
+
+Every untouched piece and delimiter MUST remain byte for byte. An append first
+repairs a missing final LF as above and reports it. Insertion of leading text,
+or replacement of an unsigned record, MUST likewise supply and report exactly
+one LF when necessary to keep a following delimiter on its own line. Such a
+repair is the only permitted change to the incoming piece's bytes. A no-op
+merge MUST NOT normalize a missing final LF. Repeating the merge with the same
+other MUST leave the result unchanged, though a signed conflict can be reported
+again. These rules retain the published order and append only missing pieces,
+so exchanges do not grow the note with duplicate leading blocks or corrupt
+pieces. Ref updates still compare and retry as specified above.
+
 ## 4. Other carriers
 
 | Carrier | Notes |

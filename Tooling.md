@@ -120,7 +120,9 @@ For an identical payload, record publication, import and merging apply the
 relay replacement rule (Transport §2.3, §3.1). A signed copy upgrades an
 unsigned one, but a differing signed copy never replaces an existing signed
 copy. A merge uses the remote, already published side as its base and keeps
-that side's signed copy on a tie. Fetching a descendant ref may fast-forward
+that side's signed copy on a tie, reporting differing signed copies. The
+byte-level union, leading-text containment, piece order and LF repairs are
+specified in [Transport §3.1](./Transport.md#31-multiple-records-in-one-note). Fetching a descendant ref may fast-forward
 to its published history; this is ref synchronization, rather than adding a
 record to an existing note. These rules do not verify or repair signatures.
 

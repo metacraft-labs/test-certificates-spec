@@ -48,6 +48,12 @@ vectors/
     pins.md
     add.txt                   OPTIONAL: a record a writer adds to note.txt
     expected-note.txt         with add.txt: the blob after adding it
+  notes/merge-<case>/       two-blob merges (Transport.md §3.1)
+    base.txt                  published blob
+    other.txt                 incoming blob
+    expected-note.txt         exact merged bytes
+    expected.json             diagnostic categories, in processing order
+    pins.md
 ```
 
 Rules for a walker:
@@ -450,6 +456,33 @@ point:
 | `eof-delimiter`, `eof-delimiter-only` vs `eof-delimiter-duplicate` | A delimiter without LF creates an empty trailing piece. Appending repairs the boundary and retains the empty piece; a duplicate leaves every byte unchanged. |
 | `appended` vs `duplicate-not-added` | `payload/minimal` added to a note that lacks it, and to one that has it. |
 
+### Two-blob merge cases
+
+A `merge-*` case uses `base.txt` (published) and `other.txt` (incoming), rather
+than `note.txt` and `add.txt`. Merge them under Transport §3.1 and compare with
+`expected-note.txt` byte for byte. Merge `other.txt` into that result again:
+the bytes MUST stay unchanged. `expected.json` has `{"reports": [...]}` in
+processing order. Categories `signed-conflict`, `leading-joined` and
+`lf-repair` require reports of, respectively, differing signed bodies, joined
+leading text, and a supplied LF before a following delimiter. Diagnostic
+wording is not prescribed. Identical signed bodies do not require a report.
+A signed-conflict report can recur on a no-op repeated merge.
+
+The records copy `payload/minimal`, `payload/scoped`, and the signed and
+unsigned twin records of `notes/signed-copy-not-replaced` and
+`notes/signed-replaces-unsigned`. The deliberately altered incoming signature
+in the conflict cases MUST NOT replace the published verifying copy.
+
+| Cases | What they pin |
+| ----- | ------------- |
+| `merge-order` | Keep published pieces in place, then append new payloads and corrupt pieces in incoming order. |
+| `merge-signed-upgrade`, `merge-empty-signature-upgrade`, `merge-unsigned-downgrade` | Signed replaces unsigned in place, never the reverse. |
+| `merge-signed-conflict`, `merge-signed-duplicate` | Keep a signed match anywhere in the result and report the tie. |
+| `merge-leading`, `merge-leading-present`, `merge-leading-substring` | Join different leading blocks once; whole-line containment is not substring containment. |
+| `merge-corrupt-lf` | Corrupt equality ignores exactly one final LF. |
+| `merge-eof-append`, `merge-eof-delimiter`, `merge-eof-noop` | Appending repairs and reports a missing LF; no-op preserves it. |
+| `merge-leading-eof`, `merge-replacement-eof` | Inserting an unterminated leading block or replacing a record before a delimiter must preserve that delimiter's boundary. |
+
 ## Ambiguities this suite closed
 
 Per Conformance.md, a vector is added whenever an ambiguity is found in the
@@ -461,6 +494,7 @@ about note framing while adding the `notes/` group:
 
 | Ambiguity | Resolution | Vector |
 | --------- | ---------- | ------ |
+| How do two blobs form a union, including signed ties, leading text and order? | A published base is retained in order; only missing pieces append, signed copies upgrade unsigned matches, conflicting signed copies are kept and reported, and leading blocks join once on whole-line boundaries — Transport §3.1 | `notes/merge-*` |
 | Can an unknown algorithm contain path syntax or a non-portable directory name, and may a relay store it? | Algorithm identifiers are 1–64 lowercase ASCII letters, digits or hyphens, excluding Windows device names; invalid names are malformed. Relays and explicit lookups accept unknown well-formed ids verbatim, although producers cannot issue them — Content-Id §1, Transport §2.2, Tooling §2 | `verify/content-algorithm-name`, `store/unknown-algorithm` |
 | Is `targets` sorted on the raw value bytes or on the escaped rendering? They differ for values containing escapes. | Raw value bytes, before escaping — Canonical-Payload.md §3 | `payload/escapes` |
 | What happens to a control character with no escape in the table? §4 says "no other character is escaped", but TOML basic strings cannot carry one raw. | Not representable, therefore malformed — Canonical-Payload.md §4 | (a rejection case, not a serialization one) |
@@ -539,8 +573,9 @@ Stated so that nobody mistakes a gap for a guarantee:
   (§2.1) depends on the environment, and atomic writing, reading both roots
   and pruning (§2.3–§2.5) on a live file system; finding a note by tree id,
   pushing, fetching and merging the notes ref (§3, Tooling.md) on a live
-  repository. None of them is a vector — in particular, the order of records
-  after a merge of two sides' notes is not pinned.
+  repository. Those runtime operations are not vectors. The byte-level result
+  of merging two blobs, including record order, is pinned by `notes/merge-*`;
+  live ref synchronization still needs runtime tests.
   In particular, Transport §2.5's protection of computed `HEAD` ids includes
   declared scopes and multiple algorithms; the live-repository checks in
   Conformance §5, rather than a store-path vector, pin that pruning policy.

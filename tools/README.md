@@ -19,7 +19,7 @@ the thing this repository exists to replace.
 | `reference_verifier.py` | The generic half of Verification.md — framework filtering, authenticity, VCS/platform/scope, coverage as a union — producing the three-valued outcome. |
 | `ssh_sig.py` | Thin wrapper over `ssh-keygen -Y sign` / `-Y verify`, and the armor ⇄ base64 conversion. |
 | `regenerate.py` | Re-derives every signature and rebuilds `vectors/index.json`. Idempotent; `--check` fails if anything would change. |
-| `check.py` | Runs the reference tools over the whole suite. |
+| `check.py` | Runs the reference tools over the whole suite, including exact two-blob note merge bytes, reports and repeated-merge stability. |
 | `walk-vectors.sh` | Walks all six groups with **POSIX shell, `jq`, `ssh-keygen`, `git` and `sha256sum` only**. |
 | `corruption-demo.sh` | Damages one byte at a time and asserts the checks go red. |
 
@@ -88,3 +88,11 @@ with a TOML parser, rebuilding each payload from the parsed fields, and runs a
 reference writer over each writer case; `walk-vectors.sh` splits the notes
 with `awk` and recognises records by a line grammar of the canonical form,
 with no TOML parser at all.
+
+The `notes/merge-*` expected blobs are hand-assembled from the published base,
+with each expected addition or replacement selected according to Transport
+§3.1. `check.py` implements that rule over parsed TOML; `walk-vectors.sh`
+implements it independently over the canonical line grammar. Both check exact
+bytes, diagnostic categories, and a repeated merge that must not grow the
+note. The corruption demo alters expected bytes and removes a conflict report
+to prove both requirements are checked.

@@ -213,5 +213,24 @@ expect_red "awk, via the shell walker, no longer finds two records" \
 cp "$work/note.orig" "$target"
 printf '\n'
 
+# Two-blob union output and its signed-conflict diagnostic are independent
+# requirements: corrupt each expected result and require both walkers to fail.
+printf '9. byte-level merge result changed in vectors/notes/merge-order\n'
+target=$work/vectors/notes/merge-order/expected-note.txt
+cp "$target" "$work/merge.orig"
+corrupt "$target" 'broken other' 'broken OTHER'
+expect_red "reference merge output differs" python3 "$work/tools/check.py" notes
+expect_red "shell merge output differs" sh "$work/tools/walk-vectors.sh" notes
+cp "$work/merge.orig" "$target"
+printf '\n'
+printf '10. signed-conflict report removed from a merge expectation\n'
+target=$work/vectors/notes/merge-signed-conflict/expected.json
+cp "$target" "$work/reports.orig"
+printf '{"reports": []}\n' > "$target"
+expect_red "reference merge conflict is reported" python3 "$work/tools/check.py" notes
+expect_red "shell merge conflict is reported" sh "$work/tools/walk-vectors.sh" notes
+cp "$work/reports.orig" "$target"
+printf '\n'
+
 printf '%d as expected, %d wrong\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

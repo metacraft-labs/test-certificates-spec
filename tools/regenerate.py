@@ -245,14 +245,14 @@ def resign_store_certificates(w: Writer) -> None:
 NOTE_DELIMITER = b"# --- test-certificate ---\n"   # Transport.md §3.1
 _NOTE_BLOCK = re.compile(
     rb"\n\[certificate\.signature\]\nalgorithm = \"ed25519\"\n"
-    rb"value = \"[^\"\n]*\"\n\Z")
+    rb"value = \"[^\"\n]*\"\n?\Z")
 _NOTE_KEY_ID = re.compile(rb"^key_id = \"([^\"\n]*)\"$", re.MULTILINE)
 
 
 def resign_note_records(w: Writer) -> None:
     """Re-sign every signed record in the notes group.
 
-    Each note-shaped file (note.txt, expected-note.txt, add.txt) is split on
+    Each note-shaped file (including base.txt and other.txt) is split on
     the Transport.md §3.1 delimiter line; a piece ending in a signature table
     is signed over the bytes before that table — the hand-derived payload, not
     a serializer's output — and only the `value` string is rewritten. Pieces
@@ -262,7 +262,7 @@ def resign_note_records(w: Writer) -> None:
     if not os.path.isdir(root):
         return
     for case in sorted(os.listdir(root)):
-        for fname in ("note.txt", "expected-note.txt", "add.txt"):
+        for fname in ("note.txt", "expected-note.txt", "add.txt", "base.txt", "other.txt"):
             path = os.path.join(root, case, fname)
             if not os.path.isfile(path):
                 continue
@@ -283,13 +283,19 @@ def resign_note_records(w: Writer) -> None:
                     if key_id not in KEY_FOR_ID:
                         raise SystemExit(f"{path}: no signing key for {key_id!r}")
                     b64 = ssh_sig.sign(payload, KEY_FOR_ID[key_id])
-                    if case in ("signed-copy-not-replaced", "signed-duplicate-protects") and fname == "add.txt":
+                    corrupt_incoming = (
+                        case in ("signed-copy-not-replaced", "signed-duplicate-protects")
+                        and fname == "add.txt") or (
+                        case in ("merge-signed-conflict", "merge-signed-duplicate")
+                        and fname == "other.txt")
+                    if corrupt_incoming:
                         # A relay's incoming signature deliberately does not verify.
                         b64 = "AAAA" + b64
                     assert ssh_sig.b64_is_canonical(b64)
+                    final_lf = b"\n" if piece.endswith(b"\n") else b""
                     piece = (payload + b"\n[certificate.signature]\n"
                              b"algorithm = \"ed25519\"\nvalue = \""
-                             + b64.encode("ascii") + b"\"\n")
+                             + b64.encode("ascii") + b"\"" + final_lf)
                 out.append(piece)
             w.write(path, NOTE_DELIMITER.join(out) if framed else out[0])
 

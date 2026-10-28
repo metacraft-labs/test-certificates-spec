@@ -278,6 +278,66 @@
         "pins": "text before the first delimiter is reported and skipped, never parsed as a record — even when, as here, it would parse."
       },
       {
+        "name": "merge-corrupt-lf",
+        "pins": "Corrupt-piece equality ignores exactly one final LF, preventing growth after a boundary repair."
+      },
+      {
+        "name": "merge-empty-signature-upgrade",
+        "pins": "An empty signature block is unsigned, so a signed copy upgrades it."
+      },
+      {
+        "name": "merge-eof-append",
+        "pins": "An append after an unterminated corrupt piece adds exactly one LF and reports the repair."
+      },
+      {
+        "name": "merge-eof-delimiter",
+        "pins": "An EOF delimiter keeps its empty piece when an append supplies the missing LF."
+      },
+      {
+        "name": "merge-eof-noop",
+        "pins": "A duplicate causes no append and preserves a missing final LF."
+      },
+      {
+        "name": "merge-leading",
+        "pins": "Different leading blocks join before the published pieces; the scoped record appends."
+      },
+      {
+        "name": "merge-leading-eof",
+        "pins": "An unterminated incoming leading-only block gets one reported LF before the published delimiter, preserving record discovery."
+      },
+      {
+        "name": "merge-leading-present",
+        "pins": "A leading block already present on whole-line boundaries is not joined again."
+      },
+      {
+        "name": "merge-leading-substring",
+        "pins": "Substring text inside a line is not a whole-line leading block."
+      },
+      {
+        "name": "merge-order",
+        "pins": "Published pieces retain their order; missing scoped payload and corrupt piece append in incoming order; the minimal payload is not duplicated."
+      },
+      {
+        "name": "merge-replacement-eof",
+        "pins": "An unterminated signed replacement before another record gets one reported LF so the next delimiter remains a delimiter."
+      },
+      {
+        "name": "merge-signed-conflict",
+        "pins": "Differing signed copies retain the published verifying signature and report the tie, even though the incoming signature fails."
+      },
+      {
+        "name": "merge-signed-duplicate",
+        "pins": "A signed published duplicate protects the payload even when an unsigned match precedes it."
+      },
+      {
+        "name": "merge-signed-upgrade",
+        "pins": "The signed copy upgrades its unsigned twin in place, before the unrelated minimal payload."
+      },
+      {
+        "name": "merge-unsigned-downgrade",
+        "pins": "An incoming unsigned twin cannot replace a signed published copy."
+      },
+      {
         "name": "signed-and-unsigned",
         "pins": "two records with different payloads share a note: a signed one, whose signature table follows its payload after one blank line, and an unsigned one."
       },
