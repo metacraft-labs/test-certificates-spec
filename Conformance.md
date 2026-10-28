@@ -61,6 +61,7 @@ Required coverage — every one of these is a place the prose can be misread:
 | `unscoped` | `paths` omitted entirely, not `[]` |
 | `base-present` | `base` present, last in `[certificate.vcs]`, after `untracked` |
 | `content-manifest` | `content` emitted verbatim for a non-git algorithm; `base` absent |
+| `content-unknown-algorithm` | A relay serializes an opaque, well-formed unknown content id verbatim |
 | `untracked-true` | `untracked = true` emitted as a bare boolean |
 
 ### 2. Signature vectors

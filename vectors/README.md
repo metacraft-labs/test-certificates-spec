@@ -487,7 +487,7 @@ about note framing while adding the `notes/` group:
 
 ## Cases beyond the required set
 
-Conformance.md requires 17 payload cases, 7 content-id cases, 14
+Conformance.md requires 18 payload cases, 7 content-id cases, 14
 verification cases, 7 store-path cases and 11 note-framing cases, and itself
 lists the cases below
 that go beyond them. Each is marked as such in its `pins.md`:

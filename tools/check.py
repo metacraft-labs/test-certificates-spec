@@ -55,7 +55,7 @@ REQUIRED_PAYLOAD = [
     "targets-single", "targets-unicode", "escapes", "non-ascii-literal",
     "multiple-commands", "argv-duplicates", "argv-empty-string", "scoped",
     "unscoped", "base-present", "content-manifest", "untracked-true",
-    "crlf-multiline",
+    "crlf-multiline", "content-unknown-algorithm",
 ]
 REQUIRED_CONTENT = [
     "order-independent", "byte-order", "modes", "scope-keeps-paths",
