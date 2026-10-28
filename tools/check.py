@@ -76,7 +76,7 @@ REQUIRED_NOTES = [
     "single-unsigned", "signed-and-unsigned", "escaped-newline",
     "corrupt-middle", "foreign-preamble", "appended",
     "signed-replaces-unsigned", "duplicate-not-added",
-    "unsigned-copy-not-added",
+    "unsigned-copy-not-added", "signed-copy-not-replaced", "signed-duplicate-protects",
 ]
 
 # Each store case's canonical.txt is a copy of a hand-derived payload vector,
@@ -603,15 +603,12 @@ def write_note(blob: bytes, record: bytes) -> bytes:
     new = parse_record(record)
     assert new is not None, "the record being added must parse"
     lead, pieces = split_note(blob)
-    for i, piece in enumerate(pieces):
-        old = parse_record(piece)
-        if old is None or old[0] != new[0]:
-            continue
-        if new[1] is not None:            # a signed copy replaces, in place
-            pieces[i] = record
-        break                             # present: never added again
-    else:
+    matches = [(i, old) for i, piece in enumerate(pieces)
+               if (old := parse_record(piece)) is not None and old[0] == new[0]]
+    if not matches:
         pieces.append(record)
+    elif new[1] is not None and not any(old[1] is not None for _, old in matches):
+        pieces[matches[0][0]] = record  # a signed relay upgrades an unsigned copy
     return lead + b"".join(NOTE_DELIMITER + p for p in pieces)
 
 

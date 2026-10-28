@@ -238,6 +238,16 @@ control. They must distinguish `HEAD` from staged and working-tree changes and
 prove that an id-computation failure aborts before deletion. These are runtime
 tests rather than store-path vectors.
 
+Replacement tests (Transport §2.3) must relay a certificate carrying a real
+verifying signature, then an altered signature over the same payload, and
+assert the original bytes still verify. They must also cover absent and empty
+signature blocks upgraded by a signed relay, an unsigned relay preserving a
+signed copy, and an explicit signing writer repairing a failing copy. Relay
+attempts over unreadable, malformed or misnamed existing files must report
+failure without replacing them. Concurrent-process tests must demonstrate
+that `.write-lock` serializes inspection and publication across writers,
+including an unsigned-to-signed upgrade racing another signed writer.
+
 ### 6. Note-framing vectors
 
 Each vector is a git-note blob holding several certificates, framed as
@@ -261,8 +271,9 @@ to the delimiter, parsing each piece, and comparing what it yields with
 `expected.json`: the same number of pieces, a skipped piece where one is
 listed, and otherwise the same canonical payload — rebuilt from the parsed
 fields — and the same signedness, with every signature verifying under the
-published vector key. It passes the writer half by adding `add.txt` to
-`note.txt` and comparing the result with `expected-note.txt` byte for byte.
+published vector key. It passes the writer half as a **relay** by adding
+`add.txt` to `note.txt` and comparing the result with `expected-note.txt` byte
+for byte.
 
 Required coverage:
 
@@ -277,9 +288,19 @@ Required coverage:
 | `signed-replaces-unsigned` | Writer: a signed copy of a present unsigned payload replaces it in place |
 | `duplicate-not-added` | Writer: a payload already present is not added again |
 | `unsigned-copy-not-added` | Writer: the unsigned copy of a present signed payload is not added, and does not replace it |
+| `signed-copy-not-replaced` | Relay: an altered signed copy cannot replace a present signed payload |
+| `signed-duplicate-protects` | Relay: a signed duplicate protects the payload even when an earlier matching record is unsigned |
+
+The reader's signed records carry verifying signatures. The two signed-relay
+writer cases deliberately alter `add.txt`'s signature without changing its
+payload; the writer must preserve `note.txt` byte for byte without needing a
+verifier. Signing-writer replacement is a runtime test with an explicitly
+made signature, rather than a relay vector.
 
 Pushing, fetching and merging the notes ref, and finding a note by tree id,
-need a live repository and are not vectors.
+need a live repository and are not vectors. Tests must cover relaying a
+failing signature through notes publication and store import without losing
+an existing verifying copy, and a stale notes update racing another writer.
 
 ## Using the suite
 

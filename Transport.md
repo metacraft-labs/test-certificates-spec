@@ -168,24 +168,52 @@ Within whichever root, the write is atomic:
    with `.` and not ending in `.toml`;
 3. flush it, then rename it to its final name.
 
-Readers never see a partial file, and two producers publishing at once cannot
-corrupt each other: they either write different names, or the same bytes under
-the same name. When the final name already exists:
+Readers never see a partial file. Writers distinguish a **signing writer**, which
+made the signature it is delivering, from a **relay**, which only received the
+certificate. A signature table alone does not establish that its signature
+verifies. A daemon's client and the reference helper are relays, even when the
+certificate arrived directly from its signer.
 
-- a producer writing a **signed** certificate MUST replace the existing file.
-  It has just made the signature, so its copy is known to verify, while the
-  existing one may carry no signature, an emptied block or a signature that
-  fails;
-- a producer writing an **unsigned** certificate MAY keep the existing file,
-  which is either the same claim or the same claim signed.
+When the final name already exists:
+
+- a signing writer delivering its own **signed** certificate MUST replace the
+  existing file: it knows its newly made signature verifies;
+- a relay delivering a **signed** certificate MUST keep an existing signed
+  copy, even if the copies' signature values differ. It MUST replace an
+  existing unsigned copy of the same payload, including one with an empty
+  signature block;
+- a writer delivering an **unsigned** certificate MUST keep an existing copy.
+
+Here, **signed** means a parsed certificate carrying non-empty signature
+`algorithm` and `value`, not a verification result. A relay that cannot read or
+parse the existing file, or finds a different payload under its name, MUST
+report the problem and leave the file unchanged; it cannot establish that the
+file is the unsigned copy it may replace. A signing writer may repair such a
+file by replacing it with its own freshly signed certificate.
+
+All writers to a store MUST serialize inspection of the existing file and
+publication of its replacement with other writers, including signing writers.
+Merely inspecting before an atomic rename is insufficient: a relay could
+inspect an unsigned copy, then overwrite a signed copy published in between.
+For interoperable local serialization, writers use the persistent file
+`<root>/.write-lock`: on POSIX, open it without following symbolic links and
+hold an exclusive `flock` lock; on Windows, open it with read/write access and
+no sharing, waiting when another writer holds it. Create the file if absent,
+never unlink or replace it, and hold the lock from before inspection until
+after publication. The file is synchronization metadata, not a certificate.
+A writer unable to acquire the lock reports an error without publishing.
+Readers do not need the lock. Pruning still follows §2.5.
 
 The name is the payload's hash, and the signature block is not part of the
 payload, so a signed certificate and the same certificate with its signature
 block removed or emptied share a name
 ([Canonical-Payload §6](./Canonical-Payload.md#6-unsigned-certificates)).
 Keeping an unsigned copy over a signed one would silently discard the
-signature; replacing a verifying signature with another over the same bytes,
-by the same key — `key_id` is part of the payload — loses nothing.
+signature. A relay preserves the first signed copy because it cannot distinguish
+a valid signature from an invalid one. Consequently a relay cannot repair a
+stored failing signature with another signed copy; the signer must deliver its
+own replacement, or the old cache entry must be removed before redelivery.
+Changing `key_id` changes the payload and therefore the name.
 
 The two roots are not two levels of trust. A certificate found in the system
 root is evaluated exactly like one found in the user root (§1): what makes a
@@ -357,13 +385,21 @@ delimiter. Blank-line separation would not work, since a certificate
 legitimately contains blank lines between its tables.
 
 Two records whose payloads are byte-identical are the same claim. A writer
-adding a record to a note MUST NOT add one whose payload is already present. If
-the new copy is signed, it MUST replace the present one, whose signature may be
-absent or may fail, as in the local store (§2.3); an unsigned copy never
-replaces a present one. A writer changes nothing else: a new record goes after
-the last piece, behind its own delimiter; a replacement takes the replaced
+adding a record to a note MUST NOT add one whose payload is already present.
+Replacement follows the writer's role in §2.3: a signing writer delivering its
+own signature MUST replace the present copy; a relay delivering a signed copy
+MUST replace an unsigned copy and MUST keep a signed one, regardless of whether
+either signature verifies. An unsigned copy never replaces a present one. If
+several parsed records carry that payload, a relay MUST keep the note unchanged
+when any of them is signed; otherwise a replacement takes the first matching
+record's place. A signing writer replaces the first matching record. No
+duplicate is added, and other copies are preserved. A writer changes nothing
+else: a new record goes after the last piece, behind its own delimiter; a replacement takes the replaced
 record's place; and every other piece — a record it did not touch, one it
 could not parse, or text before the first delimiter — is kept byte for byte.
+A notes ref update MUST compare against the ref from which the note was read,
+and retry the read and record addition if another writer moved it; an atomic
+ref update alone must not publish a decision made from a stale note.
 
 ## 4. Other carriers
 

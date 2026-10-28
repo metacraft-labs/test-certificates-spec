@@ -258,6 +258,14 @@
         "pins": "two records with different payloads share a note: a signed one, whose signature table follows its payload after one blank line, and an unsigned one."
       },
       {
+        "name": "signed-copy-not-replaced",
+        "pins": "a relay preserves every existing signed copy of a payload when adding another signed copy; an earlier unsigned duplicate does not hide it."
+      },
+      {
+        "name": "signed-duplicate-protects",
+        "pins": "a relay preserves every existing signed copy of a payload when adding another signed copy; an earlier unsigned duplicate does not hide it."
+      },
+      {
         "name": "signed-replaces-unsigned",
         "pins": "a signed record whose payload is already present, unsigned, replaces the present record in place."
       },

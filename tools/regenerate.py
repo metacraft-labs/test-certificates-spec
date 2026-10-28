@@ -283,6 +283,9 @@ def resign_note_records(w: Writer) -> None:
                     if key_id not in KEY_FOR_ID:
                         raise SystemExit(f"{path}: no signing key for {key_id!r}")
                     b64 = ssh_sig.sign(payload, KEY_FOR_ID[key_id])
+                    if case in ("signed-copy-not-replaced", "signed-duplicate-protects") and fname == "add.txt":
+                        # A relay's incoming signature deliberately does not verify.
+                        b64 = "AAAA" + b64
                     assert ssh_sig.b64_is_canonical(b64)
                     piece = (payload + b"\n[certificate.signature]\n"
                              b"algorithm = \"ed25519\"\nvalue = \""

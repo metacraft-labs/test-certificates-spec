@@ -22,7 +22,9 @@ as a library with the same operations.
 
 - **It does not verify.** It never decides whether a certificate is authentic,
   matches, or covers anything. `find` returns candidates; a framework's
-  verifier judges them. A generic "is this covered?" command would be exactly
+  verifier judges them. All its writes are relay writes (Transport §2.3, §3.1):
+  it preserves an existing signed copy rather than judging its authenticity.
+  A generic "is this covered?" command would be exactly
   the generic hook [Standard §5](./Standard.md#5-enforcement-is-project-specific)
   rules out.
 - **It does not issue or sign.** It moves certificates other components issued.
@@ -100,6 +102,14 @@ project whose tooling already uses a vendor ref keeps it.
 | `test-certificates notes import [<commit>…]` | The reverse: copies certificates from the notes on each commit's tree (default `HEAD`) into the user root. A fresh clone, or a reviewer's machine, gets the certificates that travelled with a push. |
 | `test-certificates notes push <remote>` | Pushes the notes ref. When the remote ref has moved, fetches it, merges with the union of both sides' records — never one side's — and retries a bounded number of times. |
 | `test-certificates notes fetch <remote>` | Fetches the remote notes ref into the local one, merging the same way. |
+
+For an identical payload, record publication, import and merging apply the
+relay replacement rule (Transport §2.3, §3.1). A signed copy upgrades an
+unsigned one, but a differing signed copy never replaces an existing signed
+copy. A merge uses the remote, already published side as its base and keeps
+that side's signed copy on a tie. Fetching a descendant ref may fast-forward
+to its published history; this is ref synchronization, rather than adding a
+record to an existing note. These rules do not verify or repair signatures.
 
 Merging is a union because a notes ref is shared: two developers pushing at
 once each carry certificates the other lacks, and the standard's coverage rule

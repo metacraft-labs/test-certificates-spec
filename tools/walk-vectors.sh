@@ -758,12 +758,14 @@ walk_notes() {
     fi
     cert_payload "$d/add.txt" > "$tmp/add-payload"
     found=0
+    protected=false
     i=1
     while [ "$i" -le "$n" ]; do
       if is_record "$tmp/piece.$i"; then
         cert_payload "$tmp/piece.$i" > "$tmp/have-payload"
         if cmp -s "$tmp/have-payload" "$tmp/add-payload"; then
-          found=$i; break
+          if [ "$found" = 0 ]; then found=$i; fi
+          if is_signed "$tmp/piece.$i"; then protected=true; fi
         fi
       fi
       i=$((i + 1))
@@ -773,8 +775,8 @@ walk_notes() {
       i=1
       while [ "$i" -le "$n" ]; do
         printf '%s\n' "$delimiter"
-        if [ "$i" = "$found" ] && is_signed "$d/add.txt"; then
-          cat "$d/add.txt"           # a signed copy replaces, in place
+        if [ "$i" = "$found" ] && [ "$protected" = false ] && is_signed "$d/add.txt"; then
+          cat "$d/add.txt"           # a signed relay upgrades an unsigned copy
         else
           cat "$tmp/piece.$i"
         fi
