@@ -76,10 +76,24 @@ the user, is the user's partition of a machine-wide directory:
 `<user>` is the numeric uid on POSIX systems and the account SID on Windows —
 identifiers that do not change when an account is renamed.
 
-A relative `$TEST_CERTIFICATES_DIR`, `$TEST_CERTIFICATES_SYSTEM_DIR` or
-`$XDG_STATE_HOME` is ignored, as the XDG specification requires for the last: a
-store whose location depends on the current directory would be a different
-store for each process.
+Every environment variable read above MUST supply a non-empty absolute path
+in the platform's terms to be used: `$TEST_CERTIFICATES_DIR`,
+`$TEST_CERTIFICATES_SYSTEM_DIR`, `$XDG_STATE_HOME`, `$HOME`, `%LOCALAPPDATA%`
+and `%ProgramData%`. An unset or empty value is unavailable. A relative value
+MUST be ignored and reported, then resolution continues with the next fallback,
+if any. This includes drive-relative Windows paths such as `C:state`. A store
+whose location depends on the current directory would be a different store for
+each process; the XDG specification already requires this treatment of
+`XDG_STATE_HOME`.
+
+When no applicable value yields an absolute path, that root is **unresolved**.
+It MUST be reported, and MUST NOT be guessed or resolved against the current
+directory. The two roots resolve independently: failure to resolve one does not
+prevent use of the other. A reader finds no certificates in an unresolved root
+and continues searching the other root; it reports that the search could not
+cover the unresolved root (§5), rather than claiming that root was searched
+and empty. A writer whose required destination root is unresolved MUST report
+an error and MUST NOT write the certificate elsewhere as a fallback.
 
 Neither root is shared between users. A user's system root holds only
 certificates for runs made on that user's behalf. A CI runner, a container or a

@@ -214,7 +214,20 @@ The suite additionally carries `unsigned-empty-block`: the empty-signature-block
 form of `unsigned` (Canonical-Payload §6), under `unsigned`'s name.
 
 Root resolution (Transport §2.1) depends on the environment and the platform and
-is not a vector; implementations test it against their own environment.
+is not a vector; implementations test it at runtime. Tests must cover absolute,
+relative, empty and unset values for every variable read on each supported
+platform, including `HOME`, `LOCALAPPDATA` and `ProgramData`; a drive-relative
+Windows path is relative. They must show that a relative value is reported and
+ignored, an available absolute fallback is used, and exhausting the fallbacks
+leaves a reported unresolved root without consulting the current directory.
+An absolute override must still work when its unused fallbacks are relative.
+Reader and writer integration tests must show that an unresolved root
+contributes no candidates while the other root is still searched, that an
+incomplete empty search is reported distinctly from a completed empty search,
+and that a writer needing the unresolved root fails without creating a store
+relative to the current directory. A platform-independent resolver may test
+other platforms' rules by taking the platform and environment as inputs; the
+native reader and writer must also be exercised with a real environment.
 
 Pruning protection (Transport §2.5) likewise needs a live repository and store.
 Integration tests must distinguish the unscoped `HEAD` and declared scopes in
