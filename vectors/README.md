@@ -524,6 +524,9 @@ Stated so that nobody mistakes a gap for a guarantee:
   pushing, fetching and merging the notes ref (§3, Tooling.md) on a live
   repository. None of them is a vector — in particular, the order of records
   after a merge of two sides' notes is not pinned.
+  In particular, Transport §2.5's protection of computed `HEAD` ids includes
+  declared scopes and multiple algorithms; the live-repository checks in
+  Conformance §5, rather than a store-path vector, pin that pruning policy.
 - **Store paths for unusual content ids.** Every `store/` certificate carries a
   well-formed id in an algorithm Content-Id.md §4 defines. A producer MUST NOT
   emit any other (Content-Id.md §1), so there is no path to pin for one.

@@ -214,8 +214,15 @@ root, a privileged producer prunes the system partitions it writes:
 - A producer or tool that prunes SHOULD keep the content directories most
   recently written — the reference policy keeps the newest 20, by the
   directory's modification time, which writing a file updates — plus the
-  directory for the content of the current repository's `HEAD^{tree}` where
-  the pruner knows one.
+  directories for the current repository's `HEAD` content ids that the
+  pruner can compute. Protection includes the unscoped state and each scope
+  explicitly declared to the pruner, under each algorithm it computes for
+  that repository. A scope is one set of paths, interpreted together under
+  Standard §3.2.1; unrelated scopes are not combined. The reference tool
+  computes the repository's native `git-tree-*` algorithm and
+  `manifest-v1-sha256` for each of these states (Tooling §2). Undeclared
+  scopes and algorithms the pruner cannot compute have no such protection;
+  this is not a guarantee that every certificate for `HEAD` stays cached.
 - Pruning MUST NOT remove a directory a producer is writing into. Removing a
   directory, then the producer's write or rename failing, is acceptable: the
   producer recreates it and retries once.

@@ -41,7 +41,28 @@ Each implements the corresponding part of
 | `test-certificates store-root` | Prints the resolved user root and system root (Transport §2.1). |
 | `test-certificates put <file>…` | Parses each file as a certificate, requires a well-formed `content`, and writes it atomically under its §2.2 name to the user root — or, with `--system <user>`, to that user's system root, for a privileged producer with no client (Transport §2.3). Prints each resulting path. For producers that would rather not implement §2.3 themselves, and for the client half of a daemon's delivery: the client pipes the certificate the daemon returned into `put -`. |
 | `test-certificates find <state> [--paths <p>…]` | Prints the paths of the candidate certificates stored for a state's content id, from both roots. `<state>` is `--content <id>`, `--commit <rev>`, `--staged` or `--worktree`; the last three compute the content id as [Content-Id §5](./Content-Id.md#5-computing-the-id-of-the-state-under-evaluation) prescribes, with the repository's `git-tree-*` algorithm unless `--algorithm` says otherwise, scoped by `--paths`. The exit statuses and their precedence are defined below. |
-| `test-certificates prune [--keep <n>] [--system <user>]` | Removes content directories beyond the newest `n` (default 20) from the user root — or from a system partition, when run by its owner — never the one for the current repository's `HEAD^{tree}`; each is renamed aside to a `.`-prefixed name, then deleted, and leftovers of an interrupted prune are deleted too (Transport §2.5). |
+| `test-certificates prune [--keep <n>] [--system <user>] [--paths <p>…]…` | Removes content directories beyond the newest `n` (default 20) from the user root — or from a system partition, when run by its owner — protecting the current repository's computed `HEAD` content ids as described below; each removed directory is renamed aside to a `.`-prefixed name, then deleted, and leftovers of an interrupted prune are deleted too (Transport §2.5). |
+
+`prune` protects the unscoped `HEAD` content id in both the repository's native
+`git-tree-*` algorithm and `manifest-v1-sha256`. Each occurrence of `--paths`
+declares an additional scope: its paths are interpreted together, while repeated
+occurrences declare separate scopes. Both algorithms are computed for each
+scope. For example, `prune --paths src lib --paths tests` protects the unscoped
+state, the scope `["src", "lib"]`, and the scope `["tests"]`; it does not
+implicitly protect `["src"]` or `["lib"]`. An empty `--paths` is a usage error.
+`--` within a path group makes all remaining arguments literal paths in that
+group, including paths beginning with `-`. No scope is inferred from stored
+certificates.
+
+All protected ids are computed from one fixed `HEAD` tree, including in a bare
+repository; staged changes and working-tree edits do not affect them. They are
+additional to the newest `n` directories, including with `--keep 0`, and apply
+equally to the selected user root or system partition. Outside a repository,
+or on an unborn branch, there is no automatic `HEAD` protection. An explicit
+scope without an available `HEAD`, or a failure computing a required id for an
+existing `HEAD`, is reported and aborts pruning before any directory is removed,
+including interrupted-prune leftovers. Scopes not declared to this invocation
+and algorithms it cannot compute remain subject to ordinary pruning.
 
 `find` reports what it searched — both roots, the content id, the directories — so
 "nothing found" can be told apart from "looked in the wrong place"

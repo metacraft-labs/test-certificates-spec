@@ -216,6 +216,14 @@ form of `unsigned` (Canonical-Payload §6), under `unsigned`'s name.
 Root resolution (Transport §2.1) depends on the environment and the platform and
 is not a vector; implementations test it against their own environment.
 
+Pruning protection (Transport §2.5) likewise needs a live repository and store.
+Integration tests must distinguish the unscoped `HEAD` and declared scopes in
+both the native git-tree algorithm and `manifest-v1-sha256`, preserve those
+directories even with `--keep 0`, and remove old unrelated directories as a
+control. They must distinguish `HEAD` from staged and working-tree changes and
+prove that an id-computation failure aborts before deletion. These are runtime
+tests rather than store-path vectors.
+
 ### 6. Note-framing vectors
 
 Each vector is a git-note blob holding several certificates, framed as
