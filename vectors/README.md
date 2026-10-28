@@ -474,6 +474,7 @@ about note framing while adding the `notes/` group:
 | Transport.md §3.1, as first drafted in this change (never published), replaced a present record only when "the new copy is signed and the present one is not, … as in the local store (§2.3)" — but §2.3 has a signing producer replace the existing copy whatever its block, since a present signature may fail. | As in §2.3: a signed copy replaces the present one, whose signature may be absent or may fail; an unsigned copy never replaces — Transport.md §3.1 | `notes/signed-replaces-unsigned`, `notes/unsigned-copy-not-added` |
 | Does Content-Id.md §4.1's recipe (`cp` the index, `git add --update`, `git write-tree`) see every working-tree change? It did not: in the copy, git trusted stat data that the user's index would have re-checked — a same-size edit in the second of the last index write read as clean, so the digest named the old content (found by a 1-in-3 flake in a producer's status display). | The copy is dated one second after the epoch and the filesystem monitor is off, so git compares every tracked file's content — Content-Id.md §4.1 | (none: a vector's file timestamps do not survive `git archive`, so the state cannot be shipped; producers test it with explicit timestamps) |
 | Transport.md §2.1 ignored relative overrides and `XDG_STATE_HOME` but did not say whether relative `HOME`, `LOCALAPPDATA` or `ProgramData` were usable, or what happened when no fallback resolved a root. | Every variable read must yield a non-empty absolute path; relative values are reported and ignored. An unresolved root is reported, contributes no certificates to a reader's search, and is an error for a writer that requires it; the other root remains usable — Transport.md §2.1 | (none: root resolution and reader/writer behaviour are runtime checks, required by Conformance.md §5) |
+| The schema did not say whether unknown keys were extensions or malformed, and a reader could drop unsigned claims before reconstructing the payload. | Every v1 table is closed, including root and signature; unknown keys and tables are malformed even when signatures are optional — Standard.md §3.4, Canonical-Payload.md §5 | `verify/unknown-keys` |
 
 ## Cases beyond the required set
 
@@ -484,6 +485,7 @@ that go beyond them. Each is marked as such in its `pins.md`:
 
 | Case | Why |
 | ---- | --- |
+| `verify/unknown-keys` | Closed v1 records reject unknown keys and tables at every level. |
 | `verify/unknown-schema` | Added with the Standard.md §7 clarification above. |
 | `verify/unverifiable-but-covered` | Added with the Verification.md §7 precedence rule above. |
 | `verify/unknown-schema-off-platform` | Added with the Verification.md §7.1 relevance rule above. |

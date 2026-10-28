@@ -285,6 +285,24 @@ Producers SHOULD redact values that would leak secrets, replacing the value with
 `"[redacted]"` rather than removing the argument, so the shape of the command
 survives.
 
+### 3.4 Unknown keys and tables
+
+A `test-certificate.v1` record is closed to extensions. A reader MUST reject
+as malformed any key or table not defined for its location in this schema.
+This applies to every table, including the document root, `[certificate]`,
+`[certificate.vcs]`, each `[[certificate.command]]` entry, and
+`[certificate.signature]`. At the root, only `schema` and the `certificate`
+table are defined; in the signature table, only `algorithm` and `value` are
+defined. Unknown nested tables are unknown keys of their parent and are
+rejected by the same rule, including empty tables.
+
+The rule applies even when signatures are optional or the signature block is
+excluded from the canonical payload. A reader MUST NOT silently drop unknown
+fields, interpret them as extensions, or invent a canonical representation for
+them: doing so would name or verify a claim different from the received record.
+A malformed v1 record is decidably invalid (§7), not unverifiable. This rule
+does not change the treatment of an unimplemented schema version (§7).
+
 ## 4. Frameworks recognise their own certificates
 
 A repository may be tested by several frameworks — a Nim suite under one runner,

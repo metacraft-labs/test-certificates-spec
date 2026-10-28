@@ -107,6 +107,12 @@ def _str_list(node: Any, what: str) -> list[str]:
     return node
 
 
+def _known_keys(table: dict, allowed: tuple[str, ...], where: str) -> None:
+    """Closed v1 records must not lose unrecognized claims (Standard §3.4)."""
+    for key in table:
+        _require(key in allowed, f"unknown {where} key {key!r}")
+
+
 def serialize(fields: dict) -> bytes:
     """Serialize a fields.json body to canonical payload bytes.
 
@@ -114,6 +120,7 @@ def serialize(fields: dict) -> bytes:
     are *inputs*: `targets` and `paths` arrive in whatever order the producer
     observed and may contain duplicates.
     """
+    _known_keys(fields, ("schema", "certificate"), "root")
     _require(fields.get("schema") == SCHEMA,
              f"schema must be {SCHEMA!r} (Standard.md §3.1)")
     cert = fields.get("certificate")
@@ -221,22 +228,19 @@ def fields_from_document(doc: dict) -> dict:
     The `[certificate.signature]` table is dropped here, which is what
     "excluding the signature block" means in practice.
     """
+    _known_keys(doc, ("schema", "certificate"), "root")
     cert = doc.get("certificate")
     _require(isinstance(cert, dict), "certificate table is required")
-    out_cert: dict[str, Any] = {}
-    for key in _CERT_KEYS:
-        if key in cert:
-            out_cert[key] = cert[key]
-    vcs = cert.get("vcs")
-    _require(isinstance(vcs, dict), "[certificate.vcs] is required")
-    # Every key is carried across, known or not: an unknown one makes
-    # serialize() refuse, which is how an earlier-draft record (`commit`,
-    # `clean`, no `content`) comes to be rejected rather than quietly
-    # translated (Canonical-Payload.md §7.1).
-    out_cert["vcs"] = dict(vcs)
-    commands = cert.get("command")
-    _require(isinstance(commands, list), "[[certificate.command]] is required")
-    out_cert["command"] = [{"argv": e["argv"]} for e in commands]
+    _known_keys(cert, _CERT_KEYS + ("vcs", "command", "signature"),
+                "certificate")
+    if "signature" in cert:
+        signature = cert["signature"]
+        _require(isinstance(signature, dict),
+                 "[certificate.signature] must be a table")
+        _known_keys(signature, ("algorithm", "value"), "signature")
+    # Preserve every payload key so serialize validates VCS and command tables
+    # too. Only the defined signature block is excluded, after validation.
+    out_cert = {key: value for key, value in cert.items() if key != "signature"}
     return {"schema": doc.get("schema"), "certificate": out_cert}
 
 

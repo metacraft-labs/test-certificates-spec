@@ -170,6 +170,10 @@
         "pins": "a scoped certificate is not a whole-repository certificate."
       },
       {
+        "name": "unknown-keys",
+        "pins": "unknown keys or tables make a v1 record malformed at every level, including the root and the excluded signature block."
+      },
+      {
         "name": "unknown-schema",
         "pins": "an unimplemented schema version is unverifiable, not not-covered."
       },

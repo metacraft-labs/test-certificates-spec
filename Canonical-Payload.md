@@ -165,6 +165,12 @@ else. Normalizing would silently change what a signature covers.
 
 ## 5. Verifying against the payload
 
+Before reconstructing the payload, a verifier MUST reject unknown keys and
+tables throughout the record as malformed, including the root and the
+signature block ([Standard §3.4](./Standard.md#34-unknown-keys-and-tables)).
+Excluding the signature block from the payload does not exempt it from schema
+validation. No payload is defined for a record rejected by this rule.
+
 A verifier MUST reconstruct the canonical payload **from the parsed fields**,
 not by slicing the received file. A received file may differ from canonical form
 in whitespace, key order or escaping while parsing to identical values;

@@ -1,0 +1,44 @@
+{
+  "outcome": "not-covered",
+  "reason": "Every otherwise covering v1 record has an unknown key or table and is malformed, even when signatures are not required.",
+  "missing": [
+    {
+      "framework": "example-framework",
+      "platform": "linux/amd64",
+      "targets": [
+        "t-integration",
+        "t-unit"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "certificate": "root.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "certificate.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "vcs.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "command.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "signature.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "table.toml",
+      "why": "malformed: unknown key or table"
+    },
+    {
+      "certificate": "signature-table.toml",
+      "why": "malformed: unknown key or table"
+    }
+  ]
+}

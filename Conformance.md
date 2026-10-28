@@ -160,11 +160,12 @@ Required coverage:
 That last one is the reason the outcome is three-valued, and it is the case an
 implementation is most likely to collapse.
 
-The suite additionally carries four cases that arrived with prose
+The suite additionally carries five cases that arrived with prose
 clarifications, per "Maintaining the vectors" below:
 
 | Vector | Expected |
 | ------ | -------- |
+| `unknown-keys` | **not-covered** — unknown keys and tables at every record level, including root and signature, are malformed even when signatures are optional (Standard §3.4) |
 | `unknown-schema` | **unverifiable** — an unimplemented schema version |
 | `unverifiable-but-covered` | **covered** — a record that could not be read, next to a requirement already met without it |
 | `unknown-schema-off-platform` | **unverifiable** — a record that *looks* irrelevant but cannot be interpreted, so its irrelevance cannot be established |

@@ -314,6 +314,31 @@ cert_payload() {
   printf '%s\n' "$(sed '/^\[certificate\.signature\]$/,$d' "$1")"
 }
 
+# This walker reads the suite's canonical line-oriented TOML subset, not
+# arbitrary TOML. Check keys by their containing table before taking values;
+# otherwise an excluded signature block could hide unknown claims (§3.4).
+record_keys_known() {
+  awk '
+    BEGIN { table="root" }
+    /^[[:space:]]*(#.*)?$/ { next }
+    /^\[certificate\]$/ { table="cert"; next }
+    /^\[certificate\.vcs\]$/ { table="vcs"; next }
+    /^\[\[certificate\.command\]\]$/ { table="command"; next }
+    /^\[certificate\.signature\]$/ { table="sig"; next }
+    /^\[/ { bad=1; next }
+    {
+      key=$1
+      if (table == "root" && key == "schema") next
+      if (table == "cert" && key ~ /^(framework|project|platform|targets|result|issued_at|issuer|key_id)$/) next
+      if (table == "vcs" && key ~ /^(repo|paths|content|untracked|base)$/) next
+      if (table == "command" && key == "argv") next
+      if (table == "sig" && key ~ /^(algorithm|value)$/) next
+      bad=1
+    }
+    END { exit bad }
+  ' "$1"
+}
+
 # A key store this reader understands: comments, blanks, and the four line
 # shapes Verification.md §3.1 defines. Anything else and it cannot answer,
 # which is a different thing from answering "nobody is trusted".
@@ -384,6 +409,7 @@ decide() { # <case dir> -> prints the outcome
     if [ "$(tval "$cert" schema)" != "test-certificate.v1" ]; then
       blocking=1; continue
     fi
+    record_keys_known "$cert" || continue
     [ "$(tval "$cert" result)" = passed ] || continue
     [ "$(tval "$cert" repo)" = "$s_repo" ] || continue
 
