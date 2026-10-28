@@ -401,7 +401,7 @@ an `add.txt`, by adding that record to `note.txt` and producing
 
 | File | Meaning |
 | ---- | ------- |
-| `note.txt` | The note blob, exact bytes, LF. Each record is preceded by the line `# --- test-certificate ---`; `foreign-preamble` deliberately does not begin with one. |
+| `note.txt` | The note blob, exact bytes. Lines end at LF, except deliberately unterminated final lines. Each record is preceded by the line `# --- test-certificate ---`; `foreign-preamble` and `unterminated-preamble` deliberately do not begin with one. |
 | `expected.json` | `{"pieces": [...]}`, in blob order. A record is `{"payload": "<the canonical payload, as a JSON string>", "signed": true \| false}`, with `payload_vector` naming the `payload/` case whose `canonical.txt` it copies, when it copies one. A skipped piece is `{"skipped": true, "why": "prose"}`. |
 | `add.txt` | One record in the §3.1 record form — canonical payload, and when signed a blank line and the signature table — with no delimiter. |
 | `expected-note.txt` | The blob after adding `add.txt`. Present exactly when `add.txt` is. |
@@ -426,7 +426,9 @@ What a walker does, per case:
    act as a relay: keep the note unchanged if any matching piece is signed;
    otherwise replace the first matching piece when `add.txt` is signed and
    leave the note alone when it is not. If no payload matches, append the
-   delimiter and `add.txt`. Every other piece stays byte for byte. Compare
+   delimiter and `add.txt`, first supplying exactly one LF if the non-empty
+   blob lacks its final LF. A no-op leaves even a missing LF unchanged.
+   Every other piece stays byte for byte. Compare
    with `expected-note.txt`.
    `signed-copy-not-replaced` and `signed-duplicate-protects` deliberately
    carry an altered signature in `add.txt`: no writer verification is needed,
@@ -444,6 +446,8 @@ point:
 | ----- | --------------- |
 | `signed-replaces-unsigned` vs `unsigned-copy-not-added` | The same payload, signed and not, in opposite directions: a signed copy replaces an unsigned one in place; an unsigned copy never replaces a signed one. |
 | `signed-copy-not-replaced` vs `signed-duplicate-protects` | A relay preserves a signed match, including when an unsigned duplicate appears first; the altered incoming signature must not displace the verifying one. |
+| `unterminated-preamble`, `unterminated-corrupt`, `unterminated-record` vs `unterminated-duplicate` | Appending repairs the missing LF after foreign text, corrupt text or a parsed record; a duplicate performs no repair. |
+| `eof-delimiter`, `eof-delimiter-only` vs `eof-delimiter-duplicate` | A delimiter without LF creates an empty trailing piece. Appending repairs the boundary and retains the empty piece; a duplicate leaves every byte unchanged. |
 | `appended` vs `duplicate-not-added` | `payload/minimal` added to a note that lacks it, and to one that has it. |
 
 ## Ambiguities this suite closed
@@ -482,13 +486,14 @@ about note framing while adding the `notes/` group:
 | Does Content-Id.md §4.1's recipe (`cp` the index, `git add --update`, `git write-tree`) see every working-tree change? It did not: in the copy, git trusted stat data that the user's index would have re-checked — a same-size edit in the second of the last index write read as clean, so the digest named the old content (found by a 1-in-3 flake in a producer's status display). | The copy is dated one second after the epoch and the filesystem monitor is off, so git compares every tracked file's content — Content-Id.md §4.1 | (none: a vector's file timestamps do not survive `git archive`, so the state cannot be shipped; producers test it with explicit timestamps) |
 | Transport.md §2.1 ignored relative overrides and `XDG_STATE_HOME` but did not say whether relative `HOME`, `LOCALAPPDATA` or `ProgramData` were usable, or what happened when no fallback resolved a root. | Every variable read must yield a non-empty absolute path; relative values are reported and ignored. An unresolved root is reported, contributes no certificates to a reader's search, and is an error for a writer that requires it; the other root remains usable — Transport.md §2.1 | (none: root resolution and reader/writer behaviour are runtime checks, required by Conformance.md §5) |
 | The schema did not say whether unknown keys were extensions or malformed, and a reader could drop unsigned claims before reconstructing the payload. | Every v1 table is closed, including root and signature; unknown keys and tables are malformed even when signatures are optional — Standard.md §3.4, Canonical-Payload.md §5 | `verify/unknown-keys` |
+| How does a writer append after bytes without a final LF, and is an exact EOF delimiter a line? | A final non-empty line is a line, so an exact EOF delimiter yields an empty skipped piece. An append first adds exactly one LF when needed; no-op updates preserve the missing LF. A merge makes and reports the same repair — Transport.md §3.1 | `notes/unterminated-*`, `notes/eof-delimiter*` |
 | Does receiving a signature establish that a writer may replace an existing signed copy? | Only a writer delivering its own freshly made signature knows it verifies. A relay preserves any signed match and only upgrades unsigned copies; all store writers serialize inspection and publication — Transport.md §2.3, §3.1 | `notes/signed-copy-not-replaced`, `notes/signed-duplicate-protects`; store and ref races are runtime checks required by Conformance.md §5, §6 |
 | May a system writer create its partition, what permissions do its descendants receive, and are existing roots checked before writing or pruning? | A system partition must already exist, belong to the effective producer account and give its distinct recipient read/traverse but no effective write access. Newly created descendants preserve its group or ACL reader policy independently of umask; regular records have no execute bits. Writers and pruners check ownership of existing user roots and refuse foreign roots. Unsafe or unsupported checks fail before mutation — Transport.md §2.3, §2.5 | (none: ownership, effective access, umask and link confinement require the runtime access matrix in Conformance.md §5) |
 
 ## Cases beyond the required set
 
 Conformance.md requires 18 payload cases, 7 content-id cases, 14
-verification cases, 7 store-path cases and 11 note-framing cases, and itself
+verification cases, 7 store-path cases and 18 note-framing cases, and itself
 lists the cases below
 that go beyond them. Each is marked as such in its `pins.md`:
 

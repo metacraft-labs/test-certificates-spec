@@ -647,11 +647,30 @@ delimiter='# --- test-certificate ---'
 
 split_note() { # <blob> <prefix> -> <prefix>.0 … <prefix>.N; prints N
   rm -f "$2".*
-  awk -v d="$delimiter" -v out="$2" '
-    BEGIN    { n = 0; f = out "." n; printf "" > f }
-    $0 == d  { close(f); n++; f = out "." n; printf "" > f; next }
-             { print > f }
-    END      { close(f); print n }' "$1"
+  # awk identifies whole delimiter lines, but print would invent a missing
+  # final LF. Extract original byte ranges instead, including delimiter bytes.
+  LC_ALL=C awk -v d="$delimiter" -v size="$(wc -c < "$1")" '
+    BEGIN { n = 0; pos = 0; start = 0 }
+    {
+      width = length($0) + 1
+      if (pos + width > size) width--
+      if ($0 == d) {
+        print "piece", n, start, pos - start
+        n++
+        print "delimiter", n, pos, width
+        start = pos + width
+      }
+      pos += width
+    }
+    END { print "piece", n, start, pos - start; print "count", n, 0, 0 }
+  ' "$1" > "$2.ranges"
+  while read -r kind number start count; do
+    case "$kind" in
+      count) printf '%s\n' "$number";;
+      piece) dd if="$1" of="$2.$number" bs=1 skip="$start" count="$count" 2>/dev/null;;
+      delimiter) dd if="$1" of="$2.delimiter.$number" bs=1 skip="$start" count="$count" 2>/dev/null;;
+    esac
+  done < "$2.ranges"
 }
 
 # The shape of a piece, one token per line; anything that is not a line of
@@ -690,10 +709,6 @@ walk_notes() {
   for d in "$vectors"/notes/*/; do
     d=${d%/}
     name=$(basename "$d")
-    if [ "$(tail -c 1 "$d/note.txt" | od -An -c | tr -d ' ')" != '\n' ]; then
-      bad "notes/$name: note.txt does not end with LF"
-      continue
-    fi
     n=$(split_note "$d/note.txt" "$tmp/piece")
     # The pieces a reader yields: a non-empty lead first, then pieces 1…n.
     : > "$tmp/pieces"
@@ -773,11 +788,20 @@ walk_notes() {
       fi
       i=$((i + 1))
     done
-    {
+    if [ "$found" = 0 ]; then
+      cat "$d/note.txt" > "$tmp/note-out"
+      if [ -s "$d/note.txt" ] &&
+         [ "$(tail -c 1 "$d/note.txt" | od -An -c | tr -d ' ')" != '\n' ]; then
+        printf '\n' >> "$tmp/note-out"
+      fi
+      printf '%s\n' "$delimiter" >> "$tmp/note-out"
+      cat "$d/add.txt" >> "$tmp/note-out"
+    else
+      {
       cat "$tmp/piece.0"
       i=1
       while [ "$i" -le "$n" ]; do
-        printf '%s\n' "$delimiter"
+        cat "$tmp/piece.delimiter.$i"
         if [ "$i" = "$found" ] && [ "$protected" = false ] && is_signed "$d/add.txt"; then
           cat "$d/add.txt"           # a signed relay upgrades an unsigned copy
         else
@@ -785,11 +809,8 @@ walk_notes() {
         fi
         i=$((i + 1))
       done
-      if [ "$found" = 0 ]; then    # not present: appended
-        printf '%s\n' "$delimiter"
-        cat "$d/add.txt"
-      fi
-    } > "$tmp/note-out"
+      } > "$tmp/note-out"
+    fi
     if cmp -s "$tmp/note-out" "$d/expected-note.txt"; then
       ok "notes/$name: adding add.txt yields expected-note.txt"
     else

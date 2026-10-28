@@ -258,6 +258,18 @@
         "pins": "a writer does not add a record whose payload is already present — publishing the same certificate twice changes nothing."
       },
       {
+        "name": "eof-delimiter",
+        "pins": "An exact delimiter at EOF creates a skipped empty piece, preserved before an append."
+      },
+      {
+        "name": "eof-delimiter-duplicate",
+        "pins": "A duplicate leaves an unterminated EOF delimiter byte for byte unchanged."
+      },
+      {
+        "name": "eof-delimiter-only",
+        "pins": "A delimiter-only blob without LF has an empty leading piece and a skipped empty trailing piece."
+      },
+      {
         "name": "escaped-newline",
         "pins": "the delimiter cannot occur inside a canonical record, even when a value contains a newline followed by the delimiter's exact text — the newline is written as the two characters `\\n`, so the text never starts a line."
       },
@@ -288,6 +300,22 @@
       {
         "name": "unsigned-copy-not-added",
         "pins": "an unsigned copy of a present signed record is the same payload, so it is not added, and it never replaces the signed one."
+      },
+      {
+        "name": "unterminated-corrupt",
+        "pins": "An unterminated corrupt last piece gains exactly one LF before an append."
+      },
+      {
+        "name": "unterminated-duplicate",
+        "pins": "A duplicate does not repair an unterminated piece when nothing is appended."
+      },
+      {
+        "name": "unterminated-preamble",
+        "pins": "An unterminated foreign leading piece gains exactly one LF before an append."
+      },
+      {
+        "name": "unterminated-record",
+        "pins": "A parsed unterminated record gains exactly one LF before an append."
       }
     ]
   }

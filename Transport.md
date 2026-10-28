@@ -438,7 +438,11 @@ it the same way, so the framing is fixed:
   not invalidate its neighbours. A **non-empty** piece before the first
   delimiter — a blob framed some other way, or not framed at all — is
   reported and skipped in the same way, and never parsed as a record, even
-  when it would parse. Lines end at LF, and a CR belongs to its line: a blob
+  when it would parse. Lines end at LF; a final non-empty line without LF is
+  also a line.
+  If that final line equals the delimiter, it creates an empty trailing piece,
+  which is reported and skipped like any other piece that does not parse.
+  A CR belongs to its line: a blob
   written with CRLF line endings has no delimiter line, so all of it is such a
   leading piece.
 
@@ -458,9 +462,17 @@ several parsed records carry that payload, a relay MUST keep the note unchanged
 when any of them is signed; otherwise a replacement takes the first matching
 record's place. A signing writer replaces the first matching record. No
 duplicate is added, and other copies are preserved. A writer changes nothing
-else: a new record goes after the last piece, behind its own delimiter; a replacement takes the replaced
-record's place; and every other piece — a record it did not touch, one it
-could not parse, or text before the first delimiter — is kept byte for byte.
+else: a new record goes after the last piece, behind its own delimiter; a
+replacement takes the replaced record's place; and every other piece — a
+record it did not touch, one it could not parse, or text before the first
+delimiter — is kept byte for byte, with one exception. When appending to a
+non-empty blob that does not end in LF, a writer MUST first add exactly one LF
+so that the new delimiter begins on its own line. This is the only permitted
+change to an existing piece or delimiter during an append. It applies equally
+to an unterminated record, corrupt piece, foreign leading piece or EOF
+delimiter. A writer that does not append MUST NOT add that LF. A merge that
+appends after such bytes MUST make the same repair and report it. None of
+these rules relaxes the canonical record form for newly written records.
 A notes ref update MUST compare against the ref from which the note was read,
 and retry the read and record addition if another writer moved it; an atomic
 ref update alone must not publish a decision made from a stale note.

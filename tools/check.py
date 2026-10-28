@@ -77,6 +77,9 @@ REQUIRED_NOTES = [
     "corrupt-middle", "foreign-preamble", "appended",
     "signed-replaces-unsigned", "duplicate-not-added",
     "unsigned-copy-not-added", "signed-copy-not-replaced", "signed-duplicate-protects",
+    "unterminated-preamble", "unterminated-corrupt", "unterminated-record",
+    "unterminated-duplicate", "eof-delimiter", "eof-delimiter-duplicate",
+    "eof-delimiter-only",
 ]
 
 # Each store case's canonical.txt is a copy of a hand-derived payload vector,
@@ -557,7 +560,7 @@ def split_note(blob: bytes) -> tuple[bytes, list[bytes]]:
     lines = re.findall(rb"[^\n]*\n|[^\n]+\Z", blob)
     pieces: list[list[bytes]] = [[]]
     for line in lines:
-        if line == NOTE_DELIMITER:
+        if line == NOTE_DELIMITER or line == NOTE_DELIMITER[:-1]:
             pieces.append([])
         else:
             pieces[-1].append(line)
@@ -603,14 +606,24 @@ def write_note(blob: bytes, record: bytes) -> bytes:
     """Transport.md §3.1, writer side: add one record to a note."""
     new = parse_record(record)
     assert new is not None, "the record being added must parse"
-    lead, pieces = split_note(blob)
+    _, pieces = split_note(blob)
     matches = [(i, old) for i, piece in enumerate(pieces)
                if (old := parse_record(piece)) is not None and old[0] == new[0]]
     if not matches:
-        pieces.append(record)
-    elif new[1] is not None and not any(old[1] is not None for _, old in matches):
-        pieces[matches[0][0]] = record  # a signed relay upgrades an unsigned copy
-    return lead + b"".join(NOTE_DELIMITER + p for p in pieces)
+        # Preserve the blob, including an EOF delimiter, and repair only the
+        # boundary required to put the new delimiter on its own line.
+        repair = b"\n" if blob and not blob.endswith(b"\n") else b""
+        return blob + repair + NOTE_DELIMITER + record
+    if new[1] is not None and not any(old[1] is not None for _, old in matches):
+        # Delimiter spans retain the optional missing LF at EOF. Replacing a
+        # record must not normalize unrelated bytes or an EOF delimiter.
+        delimiters = list(re.finditer(rb"(?m)^" + re.escape(NOTE_DELIMITER[:-1])
+                                     + rb"(?:\n|\Z)", blob))
+        i = matches[0][0]
+        start = delimiters[i].end()
+        end = delimiters[i + 1].start() if i + 1 < len(delimiters) else len(blob)
+        return blob[:start] + record + blob[end:]
+    return blob
 
 
 def check_notes(r: Results) -> None:
@@ -628,12 +641,14 @@ def check_notes(r: Results) -> None:
         with open(os.path.join(d, "expected.json"), encoding="utf-8") as f:
             want = json.load(f)["pieces"]
 
-        r.check(blob.endswith(b"\n") and b"\r" not in blob
-                and not blob.endswith(NOTE_DELIMITER)
-                and (blob.startswith(NOTE_DELIMITER)
-                     or name == "foreign-preamble"),
-                f"notes/{name} note.txt is LF-only, begins with the delimiter "
-                f"and does not end with one")
+        unterminated = name.startswith(("unterminated-", "eof-delimiter"))
+        eof_delimiter = name.startswith("eof-delimiter")
+        foreign = name in ("foreign-preamble", "unterminated-preamble")
+        r.check(b"\r" not in blob and blob.endswith(b"\n") != unterminated
+                and (blob.startswith(NOTE_DELIMITER) or foreign
+                     or name == "eof-delimiter-only")
+                and blob.endswith(NOTE_DELIMITER[:-1]) == eof_delimiter,
+                f"notes/{name} has its declared LF and delimiter boundaries")
 
         got = read_note(blob)
         r.check(len(got) == len(want),
@@ -656,9 +671,13 @@ def check_notes(r: Results) -> None:
                     f"first difference at byte {first_diff(payload, wp)}")
             r.check((sig is not None) == w["signed"],
                     f"{label} is {'signed' if w['signed'] else 'unsigned'}")
-            # Written by a conforming writer: exactly the record form.
-            r.check(pieces[i - offset] == record_bytes(wp, sig),
-                    f"{label} is in the §3.1 record form")
+            # Most inputs are writer-form records. Two fixtures deliberately
+            # omit their final LF; readers still parse and canonicalize them.
+            expected_record = record_bytes(wp, sig)
+            if name in ("unterminated-record", "unterminated-duplicate"):
+                expected_record = expected_record[:-1]
+            r.check(pieces[i - offset] == expected_record,
+                    f"{label} has its declared record bytes")
             if sig is not None:
                 ok, detail = ssh_sig.verify(payload, pub.strip(),
                                             sig.get("value", ""))

@@ -290,7 +290,7 @@ add, and the exact blob the note must become.
 
 ```
 vectors/notes/<name>/
-  note.txt           # the note blob, exact bytes, LF
+  note.txt           # the note blob, exact bytes; final LF may be absent
   expected.json      # the pieces a reader yields, in order: each a record
                      # (its canonical payload, and whether it is signed) or
                      # a piece reported and skipped
@@ -323,6 +323,10 @@ Required coverage:
 | `unsigned-copy-not-added` | Writer: the unsigned copy of a present signed payload is not added, and does not replace it |
 | `signed-copy-not-replaced` | Relay: an altered signed copy cannot replace a present signed payload |
 | `signed-duplicate-protects` | Relay: a signed duplicate protects the payload even when an earlier matching record is unsigned |
+| `unterminated-preamble`, `unterminated-corrupt`, `unterminated-record` | Append supplies exactly one LF after an unterminated foreign piece, corrupt piece or parsed record |
+| `unterminated-duplicate` | A duplicate does not repair an unterminated record |
+| `eof-delimiter`, `eof-delimiter-only` | An exact delimiter at EOF is a delimiter line; its empty trailing piece is skipped and preserved before an append |
+| `eof-delimiter-duplicate` | A duplicate leaves the missing LF on an EOF delimiter unchanged |
 
 The reader's signed records carry verifying signatures. The two signed-relay
 writer cases deliberately alter `add.txt`'s signature without changing its
@@ -333,7 +337,8 @@ made signature, rather than a relay vector.
 Pushing, fetching and merging the notes ref, and finding a note by tree id,
 need a live repository and are not vectors. Tests must cover relaying a
 failing signature through notes publication and store import without losing
-an existing verifying copy, and a stale notes update racing another writer.
+an existing verifying copy, a stale notes update racing another writer, and
+reporting an LF repair when a merge appends after an unterminated piece.
 
 ## Using the suite
 
