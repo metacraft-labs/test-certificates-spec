@@ -154,16 +154,62 @@ which root it delivers to follows from that:
   authenticated credentials for the run (peer credentials on its socket, the
   owner of the observed process), never from a value the run supplied.
 
-The system root's directories are created by the privileged producer or its
-installer, owned by the producer's account, and **readable but not writable by
-the user** whose partition it is — through group ownership or an access-control
-entry, whichever the platform provides. A producer writing there MUST NOT follow
-symbolic links within the root.
+The system partition itself is provisioned by the privileged producer's
+installer or a separate administrative setup step. A certificate writer MUST
+NOT create a missing partition. Before any mutation, including creation of
+`.write-lock`, a writer MUST establish that the partition is a directory owned
+by its own effective account and that the user whose partition it is has
+read/traverse access but **no write access**. The recipient and producer are
+distinct accounts. These are effective-access checks: group membership and
+access-control entries count, not just the owner or the displayed mode bits.
+A partition the recipient can write is not safe for a privileged producer to
+enter. Failure to establish any precondition MUST be reported and the write
+refused without changing the partition or creating it elsewhere.
+
+Directories created below a system partition (`v1`, algorithm and digest)
+MUST preserve its access policy: producer ownership, and the same intended
+reader access through group ownership or access-control entries. On a POSIX
+mode-based partition they take the partition's read/write/execute permission
+bits and group; regular record files take those bits with all execute bits
+removed. An ACL-based partition requires equivalent effective access for new
+directories and files, with traversal applying only to directories. Creation
+MUST NOT grant the recipient write access, and a restrictive process umask
+MUST NOT remove the intended reader access. This applies to the temporary
+record as well as its published name. Synchronization metadata MUST remain
+owned and writable by the producer and not writable by the recipient.
+Before entering an existing directory below the partition, a system writer or
+pruner MUST establish that it is producer-owned and gives the recipient
+read/traverse but no write access. Existing synchronization metadata MUST be
+a regular file owned by the producer and not writable by the recipient;
+writers check it before using it. Unsafe entries are refused without repairing
+their ownership or permissions.
+A writer MUST establish the required access before publishing; it reports
+failure if it cannot reproduce it, rather than publishing an unreadable record
+or broadening access as a fallback. Merely copying mode bits does not preserve
+an ACL policy.
+
+A system writer MUST NOT follow symbolic links at the partition itself or
+within it (or equivalent filesystem redirections such as Windows reparse
+points). It MUST perform its checks and mutations on the same filesystem
+objects, so replacing a pathname between checking and opening it cannot
+redirect a privileged write. An implementation that cannot establish effective
+access or enforce this confinement MUST report the unsupported access policy
+or operation and refuse it.
+
+An existing user root MUST be owned by the writer's effective account. A writer
+MUST check this before any mutation and refuse and report a root owned by
+another account, even when that root is writable by the caller. It MUST NOT
+take ownership of, or repair permissions on, a foreign root. Existing roots
+owned by the caller keep their configured permissions; this rule does not
+require retroactively narrowing them.
 
 Within whichever root, the write is atomic:
 
-1. create the directories as needed — a user root, on platforms that have them,
-   with permissions readable and writable by the owner only;
+1. after the root checks above, create missing directories below it as needed
+   — a user root, on platforms that have them, with permissions readable and
+   writable by the owner only. On POSIX, newly created user-store directories
+   (including the root) use `0700`, and new record files use `0600`. In a system
+   store, use the partition's access policy as specified above;
 2. write the file under a temporary name in the **same directory**, beginning
    with `.` and not ending in `.toml`;
 3. flush it, then rename it to its final name.
@@ -252,6 +298,21 @@ submission.
 The store is bounded by **pruning**, which removes whole content directories.
 Each root is pruned by whoever writes it — the user's tooling prunes the user
 root, a privileged producer prunes the system partitions it writes:
+
+- Before renaming or deleting anything, a pruner MUST apply the same root
+  ownership and effective-access checks as a writer (§2.3). In particular,
+  a system partition must already exist, be owned by the pruner's effective
+  account, and be readable/traversable but not writable by its recipient;
+  an existing user root must be owned by the pruner's effective account.
+  Failed or unsupported root checks are reported and no mutation is attempted.
+  Existing descendant directories must pass the checks in §2.3 before the
+  pruner enters or mutates them; failure leaves the affected subtree unchanged.
+  A system pruner MUST NOT follow symbolic links or equivalent filesystem
+  redirections at the partition or within it, including while deleting a
+  detached tree, and checks and mutations must refer to the same objects.
+  A link encountered as an entry may be unlinked without traversing its
+  target. Pruning never creates a missing root or changes its ownership or
+  permissions to make it acceptable.
 
 - A producer or tool that prunes SHOULD keep the content directories most
   recently written — the reference policy keeps the newest 20, by the

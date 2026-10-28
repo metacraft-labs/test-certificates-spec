@@ -230,6 +230,30 @@ relative to the current directory. A platform-independent resolver may test
 other platforms' rules by taking the platform and environment as inputs; the
 native reader and writer must also be exercised with a real environment.
 
+Store access (Transport §2.3, §2.5) also needs runtime tests: ownership,
+permission bits and access-control entries do not survive vector transport.
+Use distinct producer and recipient accounts for system-partition tests, and
+exercise the actual writer and pruner, with sentinel files outside the store
+to detect redirected writes or deletion. Required cases are:
+
+| Setup | Required result |
+| ----- | --------------- |
+| Missing system partition | Writer fails without creating it; pruner performs no mutation. |
+| Partition owned by another account, or writable by its recipient through owner, group, other or ACL permissions | Writer and pruner report refusal before creating synchronization metadata, writing, renaming or deleting anything. |
+| Safe partition with a foreign-owned or recipient-writable existing directory, or unsafe existing synchronization metadata | Writer and pruner refuse to enter or mutate the unsafe directory; writer refuses the unsafe metadata. Existing ownership, permissions and outside sentinels remain unchanged. |
+| Valid producer-owned partition with recipient read/traverse access | Writer succeeds; recipient can discover and read the record but cannot create, replace or delete it. Pruner can remove an old unrelated content directory as a positive control. |
+| The same valid partition, with writer umask `077` | Every newly created directory and record preserves the partition's intended reader access; records have no execute permission. Cover group access with an inherited group different from the producer's primary group, and ACL access on platforms supporting it. |
+| Symbolic link at the partition, `v1`, algorithm or digest directory, or in a tree selected for pruning | No operation follows it; outside sentinels remain byte-identical, with no new outside files. |
+| Existing user root owned by another account | Writer and pruner report refusal without changing that root or its contents. |
+| Existing user root owned by the caller, and a newly created user root | Existing root ownership is accepted; on POSIX, newly created directories and files grant owner-only access. Both permit a write and ordinary pruning as positive controls. |
+
+ACL cases must check effective access as the recipient, rather than merely
+comparing mode bits. A platform that cannot safely inspect or reproduce a
+required access policy must exercise its explicit refusal, not silently skip
+the check or report successful system-store support. Re-run the refusal cases
+against a deliberately unchecked writer/pruner to establish that their failure
+is caused by the missing access check rather than an unrelated I/O error.
+
 Pruning protection (Transport §2.5) likewise needs a live repository and store.
 Integration tests must distinguish the unscoped `HEAD` and declared scopes in
 both the native git-tree algorithm and `manifest-v1-sha256`, preserve those
