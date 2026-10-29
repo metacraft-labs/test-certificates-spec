@@ -324,7 +324,10 @@ root, a privileged producer prunes the system partitions it writes:
   pruner can compute. Protection includes the unscoped state and each scope
   explicitly declared to the pruner, under each algorithm it computes for
   that repository. A scope is one set of paths, interpreted together under
-  Standard §3.2.1; unrelated scopes are not combined. The reference tool
+  Standard §3.2.1; unrelated scopes are not combined. A scope the repository
+  declares for its certificates is declared to the pruner too: the reference
+  tool protects every scope given on its command line and every scope the
+  repository declares ([Tooling §3.1](./Tooling.md#31-declared-scopes)), and
   computes the repository's native `git-tree-*` algorithm and
   `manifest-v1-sha256` for each of these states (Tooling §2). Undeclared
   scopes and algorithms the pruner cannot compute have no such protection;
@@ -357,9 +360,11 @@ refs/notes/<vendor>/certificates
 The local store (§2) does not leave the machine. Git notes are how certificates
 travel **with a push**, to a receiving-side gate or to collaborators. They are
 populated from the local store by push tooling — the reference tooling
-([Tooling](./Tooling.md)) copies the certificates covering each pushed commit's
-tree into the notes ref — so a producer needs to do nothing beyond §2.3. A
-producer MAY write notes itself as well.
+([Tooling](./Tooling.md)) copies the certificates for each pushed commit's
+tree, and for its scoped tree in every scope the repository declares
+([Tooling §3.1](./Tooling.md#31-declared-scopes)), into the notes ref — so a
+producer needs to do nothing beyond §2.3. A producer MAY write notes itself as
+well.
 
 A note is data attached to a git object without changing it, and the annotated
 object may be any object — a tree as readily as a commit. For a certificate
@@ -385,11 +390,15 @@ Rules:
 - **A scoped certificate is keyed by its scoped tree**, the tree holding only
   the in-scope entries ([Content-Id §4.1](./Content-Id.md#41-git-tree-sha1-and-git-tree-sha256)).
   A consumer therefore finds it only by computing that scoped id for the state
-  in front of it — which requires knowing the scope. Scopes a framework
-  declares in its version-controlled configuration are known in advance; a
-  consumer that accepts other scopes has to enumerate the notes ref instead.
-  Scoping trades discoverability for a narrower claim, and a producer SHOULD
-  only scope when its consumers can find the result.
+  in front of it — which requires knowing the scope — and reading the note
+  on that scoped tree's oid, not on the unscoped tree. Scopes a repository
+  declares are known in advance, to push tooling and consumers alike; the
+  reference tooling's declaration is
+  [Tooling §3.1](./Tooling.md#31-declared-scopes), and it publishes every
+  declared scope's tree and no other. A consumer that accepts other scopes has
+  to enumerate the notes ref instead. Scoping trades discoverability for a
+  narrower claim, and a producer SHOULD only scope when its consumers can find
+  the result.
 - **Notes are not pushed or fetched by default.** Producers must push the notes
   ref explicitly, and verifiers must fetch it. Forgetting this is the most common
   operational failure with this carrier, and it presents as "no certificates"
