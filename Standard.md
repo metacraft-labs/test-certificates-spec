@@ -160,7 +160,14 @@ They usually mean scratch work that did not affect the run, but can mean a file
 the build picked up — in which case committing the tracked content alone may
 not reproduce the result. Producers MUST report it honestly, and a producer that
 knows its tests consumed an untracked file MUST NOT issue at all: `content` does
-not bind that file, so nothing could verify it (§2.1).
+not bind that file, so nothing could verify it (§2.1). For that rule an
+**ignored** file counts as an untracked one, because `content` does not bind it
+either ([Content-Id §2](./Content-Id.md#2-what-is-identified)); a producer that
+knows its tests consumed an ignored file MUST NOT issue. A file the attested
+commands themselves produced from the content during the run is not an
+untracked input. A producer that cannot tell such a file apart MAY treat it as
+one and withhold. None of this changes the `untracked` field, which reports
+untracked files that are not ignored, as Content-Id §2 distinguishes them.
 
 Producers:
 
